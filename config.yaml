@@ -1,0 +1,48 @@
+env:
+  robot: Panda
+  controller: OSC_POSE
+  camera_height: 256
+  camera_width: 256
+  cameras:
+    - agentview
+    - robot0_eye_in_hand
+  horizon: 500
+  control_freq: 20
+  render: false  # set true for interactive mode
+
+perception:
+  vlm_provider: openai          # openai | local
+  vlm_model: gpt-4o             # used when vlm_provider=openai
+  local_vlm_model: llava        # used when vlm_provider=local
+  cache_threshold: 0.05         # metres — re-query VLM only if an object moved more than this
+
+planner:
+  llm_provider: openai
+  llm_model: gpt-4o
+  max_replan_attempts: 2
+  temperature: 0.0
+
+voice:
+  mode: text                    # text | voice
+  whisper_model: base           # tiny | base | small | medium | large
+  vad_aggressiveness: 3         # 0–3, higher = more aggressive filtering
+
+skills:
+  checkpoint_dir: checkpoints/
+  scripted_fallback: true       # use scripted controller when checkpoint missing
+
+training:
+  bc_demos: 200
+  bc_epochs: 100
+  bc_batch_size: 256
+  bc_lr: 0.0003
+  rl_timesteps: 500000
+  rl_learning_rate: 0.0003
+  rl_batch_size: 256
+  seed: 42
+  device: auto                  # auto | cpu | cuda
+
+evaluation:
+  episodes: 100
+  seed: 0
+  render: false

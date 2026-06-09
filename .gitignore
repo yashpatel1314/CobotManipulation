@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.env
+.venv
+venv/
+env/
+ENV/
+
+# Secrets
+.env
+*.key
+*.pem
+
+# Project-specific: large binaries
+*.npz
+*.npy
+
+# Episode logs and rendered videos (created at runtime)
+logs/
+*.mp4
+
+# Keep checkpoint directory structure but not weights
+checkpoints/*
+!checkpoints/.gitkeep
+
+# MuJoCo
+.mujoco/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Pytest
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Superpowers brainstorm session files
+.superpowers/
