@@ -50,3 +50,4 @@ include = ["cobot*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+addopts = "-p no:launch_testing -p no:launch_ros"

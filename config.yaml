@@ -1,6 +1,6 @@
 env:
   robot: Panda
-  controller: OSC_POSE
+  controller: BASIC
   camera_height: 256
   camera_width: 256
   cameras:
@@ -8,7 +8,7 @@ env:
     - robot0_eye_in_hand
   horizon: 500
   control_freq: 20
-  render: false  # set true for interactive mode
+  render: true
 
 perception:
   vlm_provider: openai          # openai | local
