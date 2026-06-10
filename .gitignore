@@ -45,6 +45,9 @@ checkpoints/*
 .DS_Store
 Thumbs.db
 
+# Installers
+*.sh
+
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
