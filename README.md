@@ -199,9 +199,3 @@ pytest
 - [ ] Phase 2 — Trained MLP policies, wrist-camera visual control, richer object set
 - [ ] Phase 3 — Longer-horizon tasks, kitchen/household scene
 - [ ] Phase 4 — Gesture HRI layer, imitation learning from human demos
-
----
-
-## License
-
-MIT
