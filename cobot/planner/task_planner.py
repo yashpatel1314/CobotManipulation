@@ -28,16 +28,16 @@ position is one of: "left", "right", "center", "far_left", "far_right"
 direction is one of: "left", "right", "forward", "backward"
 
 Rules:
-1. Only use object_ids that appear in the scene description.
-2. Skills must be in execution order (e.g. grasp before place_on).
-3. Output ONLY valid JSON — a list of objects with "skill" and "args" keys. No explanation.
-4. If the command is impossible given the scene, output: {"error": "reason"}.
-5. If the command is ambiguous, output: {"clarify": "one clarifying question"}.
+1. Use object_ids exactly as they appear in the scene description.
+2. Match user color references to scene objects by color (e.g. "red block", "red cube", and "red one" all refer to the object whose color field is "red").
+3. Skills must be in execution order (e.g. grasp before place_on).
+4. Output ONLY valid JSON — a list of objects with "skill" and "args" keys. No explanation.
+5. If the command is truly impossible given the scene (e.g. colour not present at all), output: {"error": "reason"}.
+6. If the command is ambiguous, output: {"clarify": "one clarifying question"}.
 
-Example output for "stack the red block on the blue one":
+Example: scene has {"id": "red_cube", "color": "red"} and command is "pick up the red block":
 [
-  {"skill": "grasp", "args": {"object_id": "red_block"}},
-  {"skill": "place_on", "args": {"object_id": "red_block", "target_id": "blue_block"}}
+  {"skill": "grasp", "args": {"object_id": "red_cube"}}
 ]
 """
 
@@ -58,8 +58,16 @@ class TaskPlanner:
         self._max_replan = config.get("max_replan_attempts", 2)
 
         from openai import OpenAI
-        self._client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-        self._model = config.get("llm_model", "gpt-4o")
+        provider = config.get("llm_provider", "openai")
+        if provider == "groq":
+            self._client = OpenAI(
+                api_key=os.environ["GROQ_API_KEY"],
+                base_url="https://api.groq.com/openai/v1",
+            )
+            self._model = config.get("llm_model", "llama-3.3-70b-versatile")
+        else:
+            self._client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+            self._model = config.get("llm_model", "gpt-4o")
         self._temperature = config.get("temperature", 0.0)
 
     def plan(self, command: str, scene: dict) -> list[SkillCall]:

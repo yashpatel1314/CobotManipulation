@@ -44,6 +44,13 @@ class CobotEnv:
     # Object IDs present in the Stack scene
     OBJECT_IDS = ("cubeA", "cubeB")
 
+    _VIEWER_CAM = {
+        "lookat": [0, 0, 1],
+        "distance": 2,
+        "azimuth": 180,
+        "elevation": -20,
+    }
+
     def __init__(self, config: dict) -> None:
         import robosuite as suite
         from robosuite import load_composite_controller_config
@@ -57,10 +64,13 @@ class CobotEnv:
         h = config.get("camera_height", 256)
         w = config.get("camera_width", 256)
 
+        # Always use has_renderer=False so robosuite never calls viewer.sync() inside
+        # env.step(). We manage our own passive viewer so we can control the update rate
+        # (calling sync only after skills complete, not on every sim step).
         self._env = suite.make(
             "Stack",
             robots=config.get("robot", "Panda"),
-            has_renderer=config.get("render", False),
+            has_renderer=False,
             has_offscreen_renderer=True,
             use_camera_obs=True,
             camera_names=camera_names,
@@ -77,6 +87,8 @@ class CobotEnv:
         self._obs: dict[str, Any] = {}
         self._camera_height = h
         self._camera_width = w
+        self._want_render = config.get("render", False)
+        self._viewer = None  # created lazily on first render() call
 
     # ------------------------------------------------------------------
     # Core interface
@@ -91,9 +103,29 @@ class CobotEnv:
         return self._obs, reward, done, info
 
     def render(self) -> None:
-        self._env.render()
+        """Sync the passive viewer window (creates it on first call if render=True)."""
+        if not self._want_render:
+            return
+        from mujoco import viewer as mj_viewer
+        if self._viewer is None:
+            self._viewer = mj_viewer.launch_passive(
+                self._env.sim.model._model,
+                self._env.sim.data._data,
+                show_left_ui=False,
+                show_right_ui=False,
+            )
+            cam = self._VIEWER_CAM
+            self._viewer.cam.lookat[:] = cam["lookat"]
+            self._viewer.cam.distance = cam["distance"]
+            self._viewer.cam.azimuth = cam["azimuth"]
+            self._viewer.cam.elevation = cam["elevation"]
+        if self._viewer.is_running():
+            self._viewer.sync()
 
     def close(self) -> None:
+        if self._viewer is not None:
+            self._viewer.close()
+            self._viewer = None
         self._env.close()
 
     # ------------------------------------------------------------------
@@ -146,6 +178,25 @@ class CobotEnv:
             "ee_quat": self._obs["robot0_eef_quat"],
             "gripper_qpos": self._obs["robot0_gripper_qpos"],
         }
+
+    # Map VLM color-based IDs (e.g. "red_cube") to robosuite sim IDs (e.g. "cubeA")
+    _COLOR_TO_SIM = {"red": "cubeA", "green": "cubeB", "blue": "cubeB"}
+
+    def get_object_pos(self, obj_id: str) -> np.ndarray:
+        """Ground-truth 3-D position for a VLM-named object (e.g. 'red_cube').
+
+        Used by scripted fallback controllers that need precise positions.
+        """
+        color = obj_id.split("_")[0]
+        sim_id = self._COLOR_TO_SIM.get(color, obj_id)
+        key = f"{sim_id}_pos"
+        if key in self._obs:
+            return np.array(self._obs[key])
+        # Try direct lookup in case obj_id is already a sim ID
+        direct_key = f"{obj_id}_pos"
+        if direct_key in self._obs:
+            return np.array(self._obs[direct_key])
+        raise ValueError(f"Cannot resolve object '{obj_id}' to a sim position")
 
     def get_object_states(self) -> dict[str, Pose6DOF]:
         """Ground-truth object poses from the simulator.

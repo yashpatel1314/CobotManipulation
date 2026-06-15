@@ -3,8 +3,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import os
 from typing import TYPE_CHECKING
+
+log = logging.getLogger(__name__)
 
 import numpy as np
 from PIL import Image
@@ -39,13 +42,16 @@ class PerceptionModule:
 
     _SYSTEM_PROMPT = (
         "You are a robot perception system. Given a top-down RGB image of a tabletop scene, "
-        "identify all visible objects (coloured blocks and cylinders). "
-        "Return ONLY valid JSON with this structure:\n"
+        "identify all visible coloured blocks and cylinders on the table surface. "
+        "Ignore the robot arm, gripper, and any mechanical parts — focus only on the coloured objects.\n"
+        "Return ONLY a raw JSON object (no prose, no markdown, no explanation) with this exact structure:\n"
         '{"objects": [{"id": "<color>_<shape>", "color": "<color>", '
         '"shape": "cube|cylinder", "pixel_u": <int>, "pixel_v": <int>}]}\n'
         "pixel_u is the horizontal pixel coordinate (left=0), "
         "pixel_v is the vertical pixel coordinate (top=0). "
-        "Use colour names: red, blue, green, yellow, orange, purple."
+        "Use colour names: red, blue, green, yellow, orange, purple. "
+        "If no coloured objects are visible, return: {\"objects\": []}. "
+        "Output ONLY the JSON — no other text."
     )
 
     def __init__(self, config: dict, env: "CobotEnv") -> None:
@@ -55,7 +61,14 @@ class PerceptionModule:
         self._cache_threshold = config.get("cache_threshold", 0.05)
         self._cache: dict[str, dict] = {}  # scene_hash → scene description
 
-        if self._provider == "openai":
+        if self._provider == "groq":
+            from openai import OpenAI
+            self._client = OpenAI(
+                api_key=os.environ["GROQ_API_KEY"],
+                base_url="https://api.groq.com/openai/v1",
+            )
+            self._model = config.get("vlm_model", "meta-llama/llama-4-scout-17b-16e-instruct")
+        elif self._provider == "openai":
             from openai import OpenAI
             self._client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
             self._model = config.get("vlm_model", "gpt-4o")
@@ -67,20 +80,26 @@ class PerceptionModule:
     # Public API
     # ------------------------------------------------------------------
 
-    def get_scene_description(self, rgb: np.ndarray) -> dict:
+    def get_scene_description(self, rgb: np.ndarray, max_retries: int = 3) -> dict:
         """Return a JSON scene description from the VLM.
 
-        Results are cached by scene image hash so repeated calls within the
-        same scene state do not incur extra API cost.
+        Results are cached by scene image hash. Retries up to max_retries times
+        if the VLM returns an empty object list (common when it responds in prose).
         """
         h = _scene_hash(rgb)
         if h in self._cache:
             return self._cache[h]
 
-        if self._provider == "openai":
-            scene = self._query_openai(rgb)
-        else:
-            scene = self._query_local(rgb)
+        for attempt in range(max_retries):
+            if self._provider in ("openai", "groq"):
+                scene = self._query_openai(rgb)
+            else:
+                scene = self._query_local(rgb)
+
+            if scene.get("objects"):
+                break
+            if attempt < max_retries - 1:
+                log.warning("[perception] empty scene on attempt %d, retrying...", attempt + 1)
 
         self._cache[h] = scene
         return scene
@@ -145,6 +164,7 @@ class PerceptionModule:
             temperature=0.0,
         )
         raw = response.choices[0].message.content.strip()
+        log.debug("[perception] VLM raw: %s", raw[:300])
         return self._parse_scene_json(raw)
 
     def _query_local(self, rgb: np.ndarray) -> dict:
@@ -200,13 +220,23 @@ class PerceptionModule:
 
     @staticmethod
     def _parse_scene_json(raw: str) -> dict:
+        # Strip markdown code fences if present
+        if "```" in raw:
+            raw = raw.split("```")[1].lstrip("json").strip()
         try:
-            # Strip markdown code fences if present
-            if "```" in raw:
-                raw = raw.split("```")[1].lstrip("json").strip()
             return json.loads(raw)
         except json.JSONDecodeError:
-            return {"objects": []}
+            pass
+        # VLM sometimes wraps JSON in prose — extract the outermost {...} block
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        if start != -1 and end > start:
+            try:
+                return json.loads(raw[start:end])
+            except json.JSONDecodeError:
+                pass
+        log.warning("[perception] JSON parse failed — raw: %r", raw[:500])
+        return {"objects": []}
 
     @staticmethod
     def _find_object(scene: dict, obj_id: str) -> dict:

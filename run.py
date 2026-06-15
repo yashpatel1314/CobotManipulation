@@ -64,6 +64,10 @@ def main() -> None:
 
     orchestrator = CobotOrchestrator(config)
 
+    # robosuite resets its own logger level during import; silence it now
+    for _noisy in ("robosuite_logs", "robosuite", "numba", "OpenGL"):
+        logging.getLogger(_noisy).setLevel(logging.ERROR)
+
     if args.mode == "interactive":
         orchestrator.run_interactive(voice=args.voice)
 

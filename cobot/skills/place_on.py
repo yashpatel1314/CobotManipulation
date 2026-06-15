@@ -36,14 +36,13 @@ class PlaceOnSkill(Skill):
         target_id: str,
         **kwargs: Any,
     ) -> bool:
-        rgb   = env.get_scene_image()
-        depth = env.get_depth_image()
-        target_pose = perception.get_object_pose(target_id, rgb, depth)
-        target_pos  = target_pose.position()
-
         if self._policy is not None:
-            return self._run_policy(env, target_pos, np.array([1.0, 0.0, 0.0, 0.0]))
+            rgb   = env.get_scene_image()
+            depth = env.get_depth_image()
+            target_pose = perception.get_object_pose(target_id, rgb, depth)
+            return self._run_policy(env, target_pose.position(), np.array([1.0, 0.0, 0.0, 0.0]))
 
+        target_pos = env.get_object_pos(target_id)
         return self._scripted_place_on(env, target_pos)
 
     def _scripted_place_on(self, env: "CobotEnv", target_pos: np.ndarray) -> bool:

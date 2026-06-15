@@ -46,16 +46,15 @@ class PushSkill(Skill):
                 f"Valid options: {list(_DIRECTION_VECTORS.keys())}"
             )
 
-        rgb  = env.get_scene_image()
-        depth = env.get_depth_image()
-        pose = perception.get_object_pose(object_id, rgb, depth)
-        obj_pos = pose.position()
-
         if self._policy is not None:
+            rgb   = env.get_scene_image()
+            depth = env.get_depth_image()
+            pose  = perception.get_object_pose(object_id, rgb, depth)
+            obj_pos = pose.position()
             push_vec = _DIRECTION_VECTORS[direction]
-            target_pos = obj_pos + push_vec * PUSH_DISTANCE
-            return self._run_policy(env, target_pos, np.array([1.0, 0.0, 0.0, 0.0]))
+            return self._run_policy(env, obj_pos + push_vec * PUSH_DISTANCE, np.array([1.0, 0.0, 0.0, 0.0]))
 
+        obj_pos = env.get_object_pos(object_id)
         return self._scripted_push(env, obj_pos, direction)
 
     def _scripted_push(

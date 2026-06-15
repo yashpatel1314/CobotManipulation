@@ -52,6 +52,8 @@ class CobotOrchestrator:
         print("─" * 50)
 
         self._env.reset()
+        if self._config["env"].get("render", False):
+            self._env.render()
 
         while True:
             try:
@@ -111,7 +113,11 @@ class CobotOrchestrator:
         result  = {"command": command, "success": False, "replans": 0, "skills": []}
 
         try:
-            rgb   = self._env.get_scene_image()
+            rgb = self._env.get_scene_image()
+            if int(rgb.max()) < 5:
+                log.warning("Scene image appears blank; taking null step to refresh obs.")
+                self._env.step(np.zeros(self._env.action_dim))
+                rgb = self._env.get_scene_image()
             scene = self._perception.get_scene_description(rgb)
             plan  = self._planner.plan(command, scene)
         except Exception as exc:
@@ -187,7 +193,7 @@ class CobotOrchestrator:
     def _save_video(log_dir: Path, frames: list[np.ndarray]) -> None:
         try:
             import imageio
-            path = log_dir / "episode.mp4"
-            imageio.mimsave(str(path), frames, fps=10)
+            path = log_dir / "episode.gif"
+            imageio.mimsave(str(path), frames, fps=5, loop=0)
         except Exception as exc:
-            log.warning("Could not save video: %s", exc)
+            log.warning("Could not save episode frames: %s", exc)

@@ -48,7 +48,7 @@ class SkillLibrary:
             return False, f"Unknown skill '{call.skill}'"
 
         try:
-            success = skill.execute(env, perception, **call.args)
+            success = bool(skill.execute(env, perception, **call.args))
             return success, "" if success else f"{call.skill} failed (policy returned False)"
         except Exception as exc:
             return False, f"{call.skill} raised exception: {exc}"

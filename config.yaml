@@ -11,14 +11,14 @@ env:
   render: true
 
 perception:
-  vlm_provider: openai          # openai | local
-  vlm_model: gpt-4o             # used when vlm_provider=openai
+  vlm_provider: groq             # openai | groq | local
+  vlm_model: meta-llama/llama-4-scout-17b-16e-instruct
   local_vlm_model: llava        # used when vlm_provider=local
   cache_threshold: 0.05         # metres — re-query VLM only if an object moved more than this
 
 planner:
-  llm_provider: openai
-  llm_model: gpt-4o
+  llm_provider: groq
+  llm_model: llama-3.3-70b-versatile
   max_replan_attempts: 2
   temperature: 0.0
 
