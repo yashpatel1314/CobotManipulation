@@ -52,8 +52,10 @@ class GraspSkill(Skill):
         if not ok:
             return False
 
-        # Phase 2: descend
-        ok = self._move_to_target(env, obj_pos + self.GRASP_OFFSET, tolerance=0.01, gripper_cmd=-1.0)
+        # Phase 2: descend — more steps than default; tight tolerance needs time to converge
+        ok = self._move_to_target(
+            env, obj_pos + self.GRASP_OFFSET, tolerance=0.01, max_steps=300, gripper_cmd=-1.0
+        )
         if not ok:
             return False
 

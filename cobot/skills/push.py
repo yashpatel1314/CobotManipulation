@@ -19,7 +19,7 @@ _DIRECTION_VECTORS: dict[str, np.ndarray] = {
 }
 
 PUSH_DISTANCE = 0.12     # metres to push
-PUSH_HEIGHT   = 0.825    # z-height to maintain during push (just above table)
+PUSH_HEIGHT   = 0.840    # z-height for push sweep; matches cube centre (~0.835) plus margin
 APPROACH_SIDE_OFFSET = 0.08  # metres behind the object before pushing
 
 
@@ -55,23 +55,29 @@ class PushSkill(Skill):
             return self._run_policy(env, obj_pos + push_vec * PUSH_DISTANCE, np.array([1.0, 0.0, 0.0, 0.0]))
 
         obj_pos = env.get_object_pos(object_id)
-        return self._scripted_push(env, obj_pos, direction)
+        return self._scripted_push(env, obj_pos, direction, object_id)
 
     def _scripted_push(
-        self, env: "CobotEnv", obj_pos: np.ndarray, direction: str
+        self, env: "CobotEnv", obj_pos: np.ndarray, direction: str,
+        object_id: str = "",
     ) -> bool:
         push_vec  = _DIRECTION_VECTORS[direction]
+        # Target 2 cm below the object centre.  The PD controller consistently
+        # settles ~5 mm above its target, so aiming 2 cm low lands the EE near
+        # the lower third of the cube — enough for solid contact and a clean push.
+        push_z = obj_pos[2] - 0.02
+
         # Approach from the back side of the push direction
         approach  = obj_pos - push_vec * APPROACH_SIDE_OFFSET
-        approach[2] = PUSH_HEIGHT + 0.05
+        approach[2] = push_z + 0.05
 
         # Descend to push height at approach position
         push_start = approach.copy()
-        push_start[2] = PUSH_HEIGHT
+        push_start[2] = push_z
 
         # Sweep through to push end
         push_end    = obj_pos + push_vec * PUSH_DISTANCE
-        push_end[2] = PUSH_HEIGHT
+        push_end[2] = push_z
 
         # Phase 1: move above approach
         ok = self._move_to_target(env, approach, gripper_cmd=-1.0)
@@ -84,13 +90,18 @@ class PushSkill(Skill):
             return False
 
         # Phase 3: sweep push
-        ok = self._move_to_target(env, push_end, tolerance=0.02, max_steps=150, gripper_cmd=-1.0)
+        self._move_to_target(env, push_end, tolerance=0.02, max_steps=200, gripper_cmd=-1.0)
 
         # Phase 4: retreat upward
         ee_pos = env.get_robot_state()["ee_pos"]
         self._move_to_target(env, ee_pos + np.array([0.0, 0.0, 0.10]), gripper_cmd=-1.0)
 
-        return ok
+        # Verify: object must have moved at least 5 cm along the push axis
+        if object_id:
+            new_pos = env.get_object_pos(object_id)
+            axis_displacement = np.dot(new_pos - obj_pos, push_vec)
+            return bool(axis_displacement > 0.05)
+        return True
 
     def is_precondition_met(self, scene: dict, object_id: str, direction: str, **kwargs: Any) -> bool:
         ids = [o.get("id", "") for o in scene.get("objects", [])]
