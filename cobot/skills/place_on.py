@@ -43,9 +43,9 @@ class PlaceOnSkill(Skill):
             return self._run_policy(env, target_pose.position(), np.array([1.0, 0.0, 0.0, 0.0]))
 
         target_pos = env.get_object_pos(target_id)
-        return self._scripted_place_on(env, target_pos)
+        return self._scripted_place_on(env, target_pos, object_id)
 
-    def _scripted_place_on(self, env: "CobotEnv", target_pos: np.ndarray) -> bool:
+    def _scripted_place_on(self, env: "CobotEnv", target_pos: np.ndarray, object_id: str = "") -> bool:
         # Phase 1: move above target
         ok = self._move_to_target(
             env, target_pos + self.APPROACH_OFFSET, gripper_cmd=1.0
@@ -68,6 +68,11 @@ class PlaceOnSkill(Skill):
         retreat = np.array([ee_pos[0], ee_pos[1], ee_pos[2] + 0.10])
         self._move_to_target(env, retreat, gripper_cmd=-1.0)
 
+        # Verify the held object is now resting on the target (above target top surface)
+        if object_id:
+            placed_pos = env.get_object_pos(object_id)
+            target_top = target_pos[2] + 0.025  # cube half-height
+            return bool(placed_pos[2] > target_top + 0.01)
         return True
 
     def is_precondition_met(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -89,6 +90,7 @@ class CobotEnv:
         self._camera_width = w
         self._want_render = config.get("render", False)
         self._viewer = None  # created lazily on first render() call
+        self._last_viewer_sync: float = 0.0  # monotonic time of last sync
 
     # ------------------------------------------------------------------
     # Core interface
@@ -100,6 +102,12 @@ class CobotEnv:
 
     def step(self, action: np.ndarray) -> tuple[dict, float, bool, dict]:
         self._obs, reward, done, info = self._env.step(action)
+        # Throttle viewer sync to ~30 fps so animation is visible without blocking the sim
+        if self._want_render and self._viewer is not None and self._viewer.is_running():
+            now = time.monotonic()
+            if now - self._last_viewer_sync >= 0.033:
+                self._viewer.sync()
+                self._last_viewer_sync = now
         return self._obs, reward, done, info
 
     def render(self) -> None:
