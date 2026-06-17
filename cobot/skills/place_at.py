@@ -56,7 +56,7 @@ class PlaceAtSkill(Skill):
         if not ok:
             return False
 
-        ok = self._move_to_target(env, target_pos, tolerance=0.015, gripper_cmd=1.0)
+        ok = self._move_to_target(env, target_pos, tolerance=0.025, gripper_cmd=1.0, max_steps=300)
         if not ok:
             return False
 
