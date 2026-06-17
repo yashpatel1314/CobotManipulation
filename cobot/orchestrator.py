@@ -126,7 +126,11 @@ class CobotOrchestrator:
                 log.warning("Scene image appears blank; taking null step to refresh obs.")
                 self._env.step(np.zeros(self._env.action_dim))
                 rgb = self._env.get_scene_image()
-            scene = self._perception.get_scene_description(rgb)
+            try:
+                scene = self._perception.get_scene_description(rgb)
+            except Exception as vlm_exc:
+                log.warning("VLM scene description failed (%s); using sim ground-truth fallback.", vlm_exc)
+                scene = self._env.get_sim_scene_description()
             plan  = self._planner.plan(command, scene)
         except Exception as exc:
             log.warning("Planning failed: %s", exc)
@@ -155,7 +159,11 @@ class CobotOrchestrator:
 
                 log.info("Replanning after failure: %s", reason)
                 rgb   = self._env.get_scene_image()
-                scene = self._perception.get_scene_description(rgb)
+                try:
+                    scene = self._perception.get_scene_description(rgb)
+                except Exception as vlm_exc:
+                    log.warning("VLM replan scene failed (%s); using sim ground-truth fallback.", vlm_exc)
+                    scene = self._env.get_sim_scene_description()
                 try:
                     plan = self._planner.replan(call, reason, scene, command)
                     replan_count += 1

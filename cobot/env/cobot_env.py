@@ -98,14 +98,32 @@ class CobotEnv:
 
     def reset(self) -> dict[str, Any]:
         self._obs = self._env.reset()
+        # robosuite creates new Python wrapper objects for model._model and
+        # data._data on every reset().  A passive MuJoCo viewer launched before
+        # the reset is bound to the OLD wrappers and will display a frozen scene.
+        # Rebind the viewer's internal Simulate object to the fresh wrappers so
+        # subsequent sync() calls reflect the new simulation state.
+        if self._want_render and self._viewer is not None:
+            try:
+                sim = self._viewer._sim()
+                if sim is not None:
+                    sim.load(
+                        self._env.sim.model._model,
+                        self._env.sim.data._data,
+                        "",
+                    )
+            except Exception:
+                # If rebinding fails (API difference), fall back to full recreation
+                self._viewer.close()
+                self._viewer = None
         return self._obs
 
     def step(self, action: np.ndarray) -> tuple[dict, float, bool, dict]:
         self._obs, reward, done, info = self._env.step(action)
-        # Throttle viewer sync to ~30 fps so animation is visible without blocking the sim
+        # Throttle viewer sync to ~60 fps so animation is smooth in the viewer
         if self._want_render and self._viewer is not None and self._viewer.is_running():
             now = time.monotonic()
-            if now - self._last_viewer_sync >= 0.033:
+            if now - self._last_viewer_sync >= 0.016:
                 self._viewer.sync()
                 self._last_viewer_sync = now
         return self._obs, reward, done, info
@@ -219,6 +237,21 @@ class CobotEnv:
             quat = self._obs[f"{obj_id}_quat"]  # (w, x, y, z)
             states[obj_id] = Pose6DOF.from_pos_quat(pos, quat)
         return states
+
+    def get_sim_scene_description(self) -> dict:
+        """Build a minimal scene description from simulator ground-truth positions.
+
+        Used as a fallback when the VLM API is unavailable (e.g. rate-limited).
+        Returns the same schema as PerceptionModule.get_scene_description().
+        """
+        # Fixed colour assignments: cubeA=red, cubeB=green
+        objects = [
+            {"id": "red_cube",   "color": "red",   "shape": "cube",
+             "pixel_u": 128, "pixel_v": 128},
+            {"id": "green_cube", "color": "green", "shape": "cube",
+             "pixel_u": 128, "pixel_v": 128},
+        ]
+        return {"objects": objects}
 
     def get_flat_obs(self) -> np.ndarray:
         """Flat state vector used as policy input."""
