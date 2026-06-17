@@ -80,6 +80,9 @@ class PerceptionModule:
     # Public API
     # ------------------------------------------------------------------
 
+    def clear_cache(self) -> None:
+        self._cache.clear()
+
     def get_scene_description(self, rgb: np.ndarray, max_retries: int = 3) -> dict:
         """Return a JSON scene description from the VLM.
 

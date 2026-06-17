@@ -98,7 +98,7 @@ class Skill(ABC):
         env: "CobotEnv",
         target_pos: np.ndarray,
         tolerance: float = 0.02,
-        max_steps: int = 100,
+        max_steps: int = 200,
         gripper_cmd: float = -1.0,
     ) -> bool:
         """PD controller that moves the end-effector to a target position."""

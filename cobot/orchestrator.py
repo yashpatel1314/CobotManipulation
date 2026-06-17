@@ -51,8 +51,9 @@ class CobotOrchestrator:
         print(f"\nCobotManipulation ready  [input: {mode}]")
         print("─" * 50)
 
+        render = self._config["env"].get("render", False)
         self._env.reset()
-        if self._config["env"].get("render", False):
+        if render:
             self._env.render()
 
         while True:
@@ -64,7 +65,13 @@ class CobotOrchestrator:
             if not command or command.lower() in ("quit", "exit", "q"):
                 break
 
-            self._execute_command(command, render=self._config["env"].get("render", False))
+            # Fresh scene for every command — avoids state-dependent failures
+            self._env.reset()
+            self._perception.clear_cache()
+            if render:
+                self._env.render()
+
+            self._execute_command(command, render=render)
 
         self._env.close()
 
@@ -74,6 +81,7 @@ class CobotOrchestrator:
         for i, task in enumerate(tasks):
             log.info("Task %d/%d: %s", i + 1, len(tasks), task["command"])
             self._env.reset()
+            self._perception.clear_cache()
             result = self._execute_command(task["command"], render=False)
             result["expected_skills"] = task.get("expected_skills", [])
             results.append(result)
