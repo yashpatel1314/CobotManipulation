@@ -27,7 +27,8 @@ Available skills and their signatures:
 - grasp(object_id: str)                       → pick up an object
 - place_on(object_id: str, target_id: str)    → place held object on top of another
 - place_at(object_id: str, position: str)     → place held object at a named position; \
-position is one of: "left", "right", "center", "far_left", "far_right"
+position is one of: "left", "right", "center", "far_left", "far_right", \
+"top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right"
 - push(object_id: str, direction: str)        → push an object; \
 direction is one of: "left", "right", "forward", "backward"
 
@@ -39,9 +40,15 @@ Rules:
 5. If the command is truly impossible given the scene (e.g. colour not present at all), output: {"error": "reason"}.
 6. If the command is ambiguous, output: {"clarify": "one clarifying question"}.
 
-Example: scene has {"id": "red_cube", "color": "red"} and command is "pick up the red block":
+Example 1: scene has {"id": "red_cube", "color": "red"} and command is "pick up the red block":
 [
   {"skill": "grasp", "args": {"object_id": "red_cube"}}
+]
+
+Example 2: scene has {"id": "red_cube", "color": "red"} and command is "put the red block at the top right corner":
+[
+  {"skill": "grasp", "args": {"object_id": "red_cube"}},
+  {"skill": "place_at", "args": {"object_id": "red_cube", "position": "top_right"}}
 ]
 """
 
@@ -79,17 +86,48 @@ _DIRECTION_MAP: dict[str, str] = {
     "behind":    "backward",
 }
 
-# Position synonyms
+# Position synonyms — longer/more-specific phrases MUST come before shorter ones
+# so that "top right" is matched before "right" alone.
 _POSITION_MAP: dict[str, str] = {
-    "left":      "left",
-    "right":     "right",
-    "center":    "center",
-    "centre":    "center",
-    "middle":    "center",
-    "far left":  "far_left",
-    "far_left":  "far_left",
-    "far right": "far_right",
-    "far_right": "far_right",
+    # corners (must be before simple left/right/top/bottom entries)
+    "top right corner":    "top_right",
+    "upper right corner":  "top_right",
+    "far right corner":    "top_right",
+    "top left corner":     "top_left",
+    "upper left corner":   "top_left",
+    "far left corner":     "top_left",
+    "bottom right corner": "bottom_right",
+    "lower right corner":  "bottom_right",
+    "bottom left corner":  "bottom_left",
+    "lower left corner":   "bottom_left",
+    # two-word combos without "corner"
+    "top right":           "top_right",
+    "upper right":         "top_right",
+    "top left":            "top_left",
+    "upper left":          "top_left",
+    "bottom right":        "bottom_right",
+    "near right":          "bottom_right",
+    "lower right":         "bottom_right",
+    "bottom left":         "bottom_left",
+    "near left":           "bottom_left",
+    "lower left":          "bottom_left",
+    "far left":            "far_left",
+    "far_left":            "far_left",
+    "far right":           "far_right",
+    "far_right":           "far_right",
+    "far side":            "top",
+    "near side":           "bottom",
+    # single-word positions
+    "top":                 "top",
+    "forward":             "top",
+    "back":                "top",
+    "bottom":              "bottom",
+    "front":               "bottom",
+    "left":                "left",
+    "right":               "right",
+    "center":              "center",
+    "centre":              "center",
+    "middle":              "center",
 }
 
 
