@@ -62,10 +62,10 @@ class PushSkill(Skill):
         object_id: str = "",
     ) -> bool:
         push_vec  = _DIRECTION_VECTORS[direction]
-        # Target 2 cm below the object centre.  The PD controller consistently
-        # settles ~5 mm above its target, so aiming 2 cm low lands the EE near
-        # the lower third of the cube — enough for solid contact and a clean push.
-        push_z = obj_pos[2] - 0.02
+        # Aim at the cube's centre height for solid mid-face contact.
+        # A 5 mm lower bias helps the PD controller settle at or just below
+        # centre rather than near the top edge.
+        push_z = obj_pos[2] - 0.005
 
         # Approach from the back side of the push direction
         approach  = obj_pos - push_vec * APPROACH_SIDE_OFFSET
@@ -79,20 +79,22 @@ class PushSkill(Skill):
         push_end    = obj_pos + push_vec * PUSH_DISTANCE
         push_end[2] = push_z
 
-        # Phase 1: move above approach
-        ok = self._move_to_target(env, approach, gripper_cmd=-1.0)
+        # Close gripper throughout: open fingers let the cube slip between them when
+        # sweeping perpendicular to the finger-spread axis (e.g. forward direction).
+        # Phase 1: move above approach (gripper closing)
+        ok = self._move_to_target(env, approach, gripper_cmd=1.0)
         if not ok:
             return False
 
-        # Phase 2: descend to push height
-        ok = self._move_to_target(env, push_start, tolerance=0.015, gripper_cmd=-1.0)
+        # Phase 2: descend to push height (gripper closed)
+        ok = self._move_to_target(env, push_start, tolerance=0.015, gripper_cmd=1.0)
         if not ok:
             return False
 
-        # Phase 3: sweep push
-        self._move_to_target(env, push_end, tolerance=0.02, max_steps=200, gripper_cmd=-1.0)
+        # Phase 3: sweep push (gripper closed — solid face contacts cube)
+        self._move_to_target(env, push_end, tolerance=0.02, max_steps=200, gripper_cmd=1.0)
 
-        # Phase 4: retreat upward
+        # Phase 4: retreat upward and reopen
         ee_pos = env.get_robot_state()["ee_pos"]
         self._move_to_target(env, ee_pos + np.array([0.0, 0.0, 0.10]), gripper_cmd=-1.0)
 

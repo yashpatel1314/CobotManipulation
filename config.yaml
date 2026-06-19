@@ -9,6 +9,11 @@ env:
   horizon: 500
   control_freq: 20
   render: true
+  extra_colors:          # pre-loaded but off-table; spawn via "spawn a blue block"
+    - blue
+    - yellow
+    - orange
+    - purple
 
 perception:
   vlm_provider: groq             # openai | groq | local

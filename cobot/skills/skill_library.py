@@ -6,6 +6,7 @@ from .grasp import GraspSkill
 from .place_at import PlaceAtSkill
 from .place_on import PlaceOnSkill
 from .push import PushSkill
+from .spawn import SpawnSkill
 
 if TYPE_CHECKING:
     from cobot.env.cobot_env import CobotEnv
@@ -18,6 +19,7 @@ _SKILL_CLASSES = {
     "place_on": PlaceOnSkill,
     "place_at": PlaceAtSkill,
     "push":     PushSkill,
+    "spawn":    SpawnSkill,
 }
 
 

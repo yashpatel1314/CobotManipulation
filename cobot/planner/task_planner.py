@@ -24,7 +24,9 @@ You are a robot task planner. Given a JSON scene description and a user command,
 output a JSON array of skill calls to execute on the robot arm.
 
 Available skills and their signatures:
-- grasp(object_id: str)                       → pick up an object
+- spawn(object_id: str)                       → add a new coloured cube to the scene; \
+object_id is "<color>_cube" (e.g. "blue_cube"). Use this BEFORE manipulating a new object.
+- grasp(object_id: str)                       → pick up an object already in the scene
 - place_on(object_id: str, target_id: str)    → place held object on top of another
 - place_at(object_id: str, position: str)     → place held object at a named position; \
 position is one of: "left", "right", "center", "far_left", "far_right", \
@@ -33,22 +35,27 @@ position is one of: "left", "right", "center", "far_left", "far_right", \
 direction is one of: "left", "right", "forward", "backward"
 
 Rules:
-1. Use object_ids exactly as they appear in the scene description.
-2. Match user color references to scene objects by color (e.g. "red block", "red cube", and "red one" all refer to the object whose color field is "red").
-3. Skills must be in execution order (e.g. grasp before place_on).
+1. Use object_ids exactly as they appear in the scene description, or "<color>_cube" for spawn.
+2. Match user color references to scene objects by color.
+3. Skills must be in execution order (e.g. grasp before place_on; spawn before grasp of new object).
 4. Output ONLY valid JSON — a list of objects with "skill" and "args" keys. No explanation.
-5. If the command is truly impossible given the scene (e.g. colour not present at all), output: {"error": "reason"}.
+5. If the command is truly impossible given the scene, output: {"error": "reason"}.
 6. If the command is ambiguous, output: {"clarify": "one clarifying question"}.
 
-Example 1: scene has {"id": "red_cube", "color": "red"} and command is "pick up the red block":
-[
-  {"skill": "grasp", "args": {"object_id": "red_cube"}}
-]
+Example 1: command "pick up the red block":
+[{"skill": "grasp", "args": {"object_id": "red_cube"}}]
 
-Example 2: scene has {"id": "red_cube", "color": "red"} and command is "put the red block at the top right corner":
+Example 2: command "put the red block at the top right corner":
 [
   {"skill": "grasp", "args": {"object_id": "red_cube"}},
   {"skill": "place_at", "args": {"object_id": "red_cube", "position": "top_right"}}
+]
+
+Example 3: command "spawn a blue block then move it to the left":
+[
+  {"skill": "spawn",    "args": {"object_id": "blue_cube"}},
+  {"skill": "grasp",    "args": {"object_id": "blue_cube"}},
+  {"skill": "place_at", "args": {"object_id": "blue_cube", "position": "left"}}
 ]
 """
 
@@ -67,12 +74,8 @@ Revise the plan to complete the original goal. Output only the remaining steps a
 # Colour names we recognise
 _COLOURS = ("red", "green", "blue", "yellow", "orange", "purple")
 
-# Maps colour → canonical object_id used by the sim
-_COLOUR_TO_ID: dict[str, str] = {
-    "red":    "red_cube",
-    "green":  "green_cube",
-    "blue":   "green_cube",   # blue is cubeB which maps to green slot; rare
-}
+# Default colour → object_id (scene dict overrides these at plan time)
+_COLOUR_TO_ID: dict[str, str] = {c: f"{c}_cube" for c in _COLOURS}
 
 # Direction synonyms
 _DIRECTION_MAP: dict[str, str] = {
@@ -162,13 +165,33 @@ class RuleBasedPlanner:
     def plan(self, command: str, scene: dict) -> list[SkillCall] | None:
         cmd = command.lower().strip()
 
-        # Build scene colour→id map from actual scene objects (overrides defaults)
+        # Build scene colour→id map. Always normalise to "<color>_cube" since every
+        # object in this simulation is a cube — VLM shape labels ("cylinder" etc.) are wrong.
         colour_to_id: dict[str, str] = dict(_COLOUR_TO_ID)
         for obj in scene.get("objects", []):
             colour = obj.get("color", "")
-            oid    = obj.get("id", "")
-            if colour and oid:
-                colour_to_id[colour] = oid
+            if colour:
+                colour_to_id[colour] = f"{colour}_cube"
+
+        # ── Spawn ───────────────────────────────────────────────────────────
+        spawn_m = re.search(r"\b(spawn|add|create|bring\s+in|introduce)\b", cmd)
+        if spawn_m:
+            colour = _find_colour(cmd)
+            if colour:
+                obj_id = f"{colour}_cube"
+                calls: list[SkillCall] = [SkillCall("spawn", {"object_id": obj_id})]
+                # If command also mentions a destination, add grasp+place_at
+                position = None
+                for kw, pos in sorted(_POSITION_MAP.items(), key=lambda x: -len(x[0])):
+                    if kw in cmd:
+                        position = pos
+                        break
+                if position:
+                    calls += [
+                        SkillCall("grasp",    {"object_id": obj_id}),
+                        SkillCall("place_at", {"object_id": obj_id, "position": position}),
+                    ]
+                return calls
 
         # ── Push ────────────────────────────────────────────────────────────
         push_m = re.search(
