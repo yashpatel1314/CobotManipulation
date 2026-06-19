@@ -135,11 +135,15 @@ _POSITION_MAP: dict[str, str] = {
 
 
 def _find_colour(text: str) -> str | None:
-    """Return the first colour word found in *text* (lowercased)."""
+    """Return the colour word that appears earliest in *text* by position."""
+    hits: list[tuple[int, str]] = []
     for c in _COLOURS:
-        if c in text:
-            return c
-    return None
+        idx = text.find(c)
+        if idx >= 0:
+            hits.append((idx, c))
+    if not hits:
+        return None
+    return min(hits, key=lambda x: x[0])[1]
 
 
 def _find_two_colours(text: str) -> tuple[str | None, str | None]:
@@ -180,9 +184,25 @@ class RuleBasedPlanner:
             if colour:
                 obj_id = f"{colour}_cube"
                 calls: list[SkillCall] = [SkillCall("spawn", {"object_id": obj_id})]
-                # If command also mentions a destination, add grasp+place_at
+
+                # "on top of <colour>" / "onto" / "stack on" → place_on
+                on_top_m = re.search(r"\bon\s+top\s+of\b|\bonto\b", cmd)
+                if on_top_m:
+                    c1, c2 = _find_two_colours(cmd)
+                    target_colour = c2 if c1 == colour else c1
+                    if target_colour:
+                        calls += [
+                            SkillCall("grasp",    {"object_id": obj_id}),
+                            SkillCall("place_on", {"object_id": obj_id,
+                                                   "target_id": f"{target_colour}_cube"}),
+                        ]
+                        return calls
+
+                # Named table position → place_at (skip "top" when it's part of "on top of")
                 position = None
                 for kw, pos in sorted(_POSITION_MAP.items(), key=lambda x: -len(x[0])):
+                    if kw == "top" and "on top of" in cmd:
+                        continue
                     if kw in cmd:
                         position = pos
                         break
