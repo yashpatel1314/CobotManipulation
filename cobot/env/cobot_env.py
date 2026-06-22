@@ -236,9 +236,12 @@ class CobotEnv:
     # ------------------------------------------------------------------
 
     def get_scene_image(self) -> np.ndarray:
-        # Take a zero-action step to flush the offscreen renderer so the image
-        # reflects the current physics state rather than a stale obs buffer.
-        self._obs, _, _, _ = self._env.step(np.zeros(self.action_dim))
+        # Take a zero-action step to flush the offscreen renderer.
+        # Guard against a terminated horizon — return the cached frame silently.
+        try:
+            self._obs, _, _, _ = self._env.step(np.zeros(self.action_dim))
+        except ValueError:
+            pass
         return self._obs["agentview_image"][::-1].copy()
 
     def get_depth_image(self) -> np.ndarray:

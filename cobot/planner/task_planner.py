@@ -30,9 +30,16 @@ object_id is "<color>_cube" (e.g. "blue_cube"). Use this BEFORE manipulating a n
 - place_on(object_id: str, target_id: str)    → place held object on top of another
 - place_at(object_id: str, position: str)     → place held object at a named position; \
 position is one of: "left", "right", "center", "far_left", "far_right", \
-"top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right"
+"top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right", \
+"adj_left", "adj_right"
 - push(object_id: str, direction: str)        → push an object; \
 direction is one of: "left", "right", "forward", "backward"
+
+Position notes:
+- "adj_left" and "adj_right" place cubes ~4 cm apart at table centre — use these \
+as the TWO BASE cubes for a pyramid so they are touching and the apex can be stacked on one.
+- Cubes blue/yellow/orange/purple are NOT on the table at startup; always spawn them first.
+- Red and green are always on the table; do NOT spawn them.
 
 Rules:
 1. Use object_ids exactly as they appear in the scene description, or "<color>_cube" for spawn.
@@ -56,6 +63,18 @@ Example 3: command "spawn a blue block then move it to the left":
   {"skill": "spawn",    "args": {"object_id": "blue_cube"}},
   {"skill": "grasp",    "args": {"object_id": "blue_cube"}},
   {"skill": "place_at", "args": {"object_id": "blue_cube", "position": "left"}}
+]
+
+Example 4: command "make a pyramid with yellow and purple at the bottom and green on top":
+[
+  {"skill": "spawn",    "args": {"object_id": "yellow_cube"}},
+  {"skill": "grasp",    "args": {"object_id": "yellow_cube"}},
+  {"skill": "place_at", "args": {"object_id": "yellow_cube", "position": "adj_left"}},
+  {"skill": "spawn",    "args": {"object_id": "purple_cube"}},
+  {"skill": "grasp",    "args": {"object_id": "purple_cube"}},
+  {"skill": "place_at", "args": {"object_id": "purple_cube", "position": "adj_right"}},
+  {"skill": "grasp",    "args": {"object_id": "green_cube"}},
+  {"skill": "place_on", "args": {"object_id": "green_cube", "target_id": "yellow_cube"}}
 ]
 """
 
@@ -171,6 +190,25 @@ def _find_two_colours(text: str) -> tuple[str | None, str | None]:
     return first, second
 
 
+def _find_three_colours(text: str) -> tuple[str | None, str | None, str | None]:
+    """Return up to three colours in the order they appear in *text*."""
+    hits: list[tuple[int, str]] = []
+    for c in _COLOURS:
+        idx = text.find(c)
+        if idx >= 0:
+            hits.append((idx, c))
+    hits.sort(key=lambda x: x[0])
+    return (
+        hits[0][1] if len(hits) > 0 else None,
+        hits[1][1] if len(hits) > 1 else None,
+        hits[2][1] if len(hits) > 2 else None,
+    )
+
+
+# Colours that are not on the table at reset and must be spawned before use
+_EXTRA_COLOURS: frozenset[str] = frozenset({"blue", "yellow", "orange", "purple"})
+
+
 class RuleBasedPlanner:
     """Deterministic regex/keyword planner for the fixed skill vocabulary.
 
@@ -188,6 +226,46 @@ class RuleBasedPlanner:
             colour = obj.get("color", "")
             if colour:
                 colour_to_id[colour] = f"{colour}_cube"
+
+        # ── Pyramid ─────────────────────────────────────────────────────────
+        # "pyramid with X and Y at the bottom and Z at the top"
+        # Strategy: place the two base cubes at adj_left / adj_right (4 cm
+        # apart so they are touching), then stack the apex cube on the left
+        # base. Cubes that are not initially on the table are spawned first.
+        pyramid_m = re.search(r"\bpyramid\b", cmd)
+        if pyramid_m:
+            c1, c2, c3 = _find_three_colours(cmd)
+            # Need exactly 3 colours; infer apex from "top" keyword position
+            if c1 and c2 and c3:
+                top_m = re.search(r"\btop\b", cmd)
+                if top_m:
+                    top_pos = top_m.start()
+                    # The colour nearest to "top" is the apex
+                    dists = {c: abs(cmd.find(c) - top_pos) for c in (c1, c2, c3)}
+                    apex = min(dists, key=lambda c: dists[c])
+                    bases = [c for c in (c1, c2, c3) if c != apex]
+                else:
+                    apex, bases = c3, [c1, c2]  # last colour by text position = top
+
+                calls: list[SkillCall] = []
+                base_positions = ["adj_left", "adj_right"]
+                for base_colour, pos in zip(bases, base_positions):
+                    base_id = f"{base_colour}_cube"
+                    if base_colour in _EXTRA_COLOURS:
+                        calls.append(SkillCall("spawn", {"object_id": base_id}))
+                    calls += [
+                        SkillCall("grasp",    {"object_id": base_id}),
+                        SkillCall("place_at", {"object_id": base_id, "position": pos}),
+                    ]
+                apex_id = f"{apex}_cube"
+                if apex in _EXTRA_COLOURS:
+                    calls.append(SkillCall("spawn", {"object_id": apex_id}))
+                calls += [
+                    SkillCall("grasp",    {"object_id": apex_id}),
+                    SkillCall("place_on", {"object_id": apex_id,
+                                           "target_id": f"{bases[0]}_cube"}),
+                ]
+                return calls
 
         # ── Spawn ───────────────────────────────────────────────────────────
         spawn_m = re.search(r"\b(spawn|add|create|bring\s+in|introduce)\b", cmd)

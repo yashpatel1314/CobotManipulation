@@ -27,6 +27,10 @@ _TABLE_POSITIONS: dict[str, np.ndarray] = {
     "top_right":    np.array([ 0.10, -0.20, 0.82]),   # far + right corner
     "bottom_left":  np.array([-0.10,  0.20, 0.82]),   # near + left corner
     "bottom_right": np.array([-0.10, -0.20, 0.82]),   # near + right corner
+    # Adjacent-center positions: cubes placed here are touching (~4 cm apart)
+    # Use for pyramid bases so the top cube visually sits between them.
+    "adj_left":     np.array([ 0.00,  0.04, 0.82]),
+    "adj_right":    np.array([ 0.00, -0.04, 0.82]),
 }
 
 PLACE_HEIGHT_OFFSET = 0.03  # metres above table surface

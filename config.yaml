@@ -6,7 +6,7 @@ env:
   cameras:
     - agentview
     - robot0_eye_in_hand
-  horizon: 500
+  horizon: 2000
   control_freq: 20
   render: true
   extra_colors:          # pre-loaded but off-table; spawn via "spawn a blue block"
