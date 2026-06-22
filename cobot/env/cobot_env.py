@@ -98,6 +98,10 @@ class CobotEnv:
         self._want_render = config.get("render", False)
         self._viewer = None
         self._last_viewer_sync: float = 0.0
+        # Real-time pacing: step wall-clock target when viewer is active
+        self._control_freq: float = float(config.get("control_freq", 20))
+        self._step_dt: float = 1.0 / self._control_freq  # 0.05 s @ 20 Hz
+        self._last_step_wall: float = 0.0
 
     # ------------------------------------------------------------------
     # Core interface
@@ -106,6 +110,7 @@ class CobotEnv:
     def reset(self) -> dict[str, Any]:
         self._obs = self._env.reset()
         self._spawned_colors.clear()
+        self._last_step_wall = time.monotonic()
         if self._want_render and self._viewer is not None:
             try:
                 sim = self._viewer._sim()
@@ -123,10 +128,17 @@ class CobotEnv:
     def step(self, action: np.ndarray) -> tuple[dict, float, bool, dict]:
         self._obs, reward, done, info = self._env.step(action)
         if self._want_render and self._viewer is not None and self._viewer.is_running():
-            now = time.monotonic()
-            if now - self._last_viewer_sync >= 0.016:
-                self._viewer.sync()
-                self._last_viewer_sync = now
+            # Sync viewer on every step so motion is continuous
+            self._viewer.sync()
+            self._last_viewer_sync = time.monotonic()
+            # Real-time pacing: sleep for the remainder of the step period so
+            # the viewer displays each frame at natural speed instead of
+            # blasting through 200 steps in under a second.
+            elapsed = time.monotonic() - self._last_step_wall
+            remaining = self._step_dt - elapsed
+            if remaining > 0.002:  # don't bother for <2 ms leftovers
+                time.sleep(remaining)
+        self._last_step_wall = time.monotonic()
         return self._obs, reward, done, info
 
     def render(self) -> None:
