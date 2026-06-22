@@ -146,6 +146,18 @@ def _find_colour(text: str) -> str | None:
     return min(hits, key=lambda x: x[0])[1]
 
 
+def _find_colour_after(text: str, pos: int) -> str | None:
+    """Return the colour word that appears first at or after *pos* in *text*."""
+    hits: list[tuple[int, str]] = []
+    for c in _COLOURS:
+        idx = text.find(c, pos)
+        if idx >= 0:
+            hits.append((idx, c))
+    if not hits:
+        return None
+    return min(hits, key=lambda x: x[0])[1]
+
+
 def _find_two_colours(text: str) -> tuple[str | None, str | None]:
     """Return colours in the order they appear in *text* (left to right)."""
     hits: list[tuple[int, str]] = []
@@ -180,13 +192,29 @@ class RuleBasedPlanner:
         # ── Spawn ───────────────────────────────────────────────────────────
         spawn_m = re.search(r"\b(spawn|add|create|bring\s+in|introduce)\b", cmd)
         if spawn_m:
-            colour = _find_colour(cmd)
+            # If manipulation verbs appear BEFORE the spawn keyword the command
+            # is a multi-operation sequence we cannot fully parse (e.g. "move
+            # red … then spawn blue … arrange in a line").  Return None so the
+            # LLM handles the whole thing.
+            pre_spawn = cmd[: spawn_m.start()]
+            if re.search(r"\b(put|move|place|slide|push|grab|grasp)\b", pre_spawn):
+                return None
+
+            # Prefer the colour closest to (and after) the spawn verb so that
+            # "put red … then spawn a blue block" correctly identifies blue.
+            colour = _find_colour_after(cmd, spawn_m.end()) or _find_colour(cmd)
             if colour:
                 obj_id = f"{colour}_cube"
                 calls: list[SkillCall] = [SkillCall("spawn", {"object_id": obj_id})]
 
-                # "on top of <colour>" / "onto" / "stack on" → place_on
-                on_top_m = re.search(r"\bon\s+top\s+of\b|\bonto\b", cmd)
+                # "on top of <colour>" / "onto" / "place/put it on the <colour>" → place_on
+                _colour_alt = "|".join(_COLOURS)
+                on_top_m = re.search(
+                    r"\bon\s+top\s+of\b"
+                    r"|\bonto\b"
+                    rf"|\b(?:place|put)\s+(?:\w+\s+)?on\s+(?:the\s+)?(?:{_colour_alt})\b",
+                    cmd,
+                )
                 if on_top_m:
                     c1, c2 = _find_two_colours(cmd)
                     target_colour = c2 if c1 == colour else c1
@@ -247,7 +275,7 @@ class RuleBasedPlanner:
 
         # ── Place at named position ──────────────────────────────────────────
         place_at_m = re.search(
-            r"\b(move|put|place|bring|send|go)\b", cmd
+            r"\b(move|put|place|bring|send|go|take)\b", cmd
         )
         if place_at_m:
             colour   = _find_colour(cmd)
