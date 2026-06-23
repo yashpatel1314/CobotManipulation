@@ -126,6 +126,14 @@ class CobotOrchestrator:
                 log.warning("Scene image appears blank; taking null step to refresh obs.")
                 self._env.step(np.zeros(self._env.action_dim))
                 rgb = self._env.get_scene_image()
+
+            # Resolve ambiguous references ("that one", "the cube on the left")
+            # before planning — the VLM looks at the camera and rewrites the
+            # command with concrete colour names.
+            available = ["red", "green"] + list(self._env._spawned_colors)
+            command = self._perception.resolve_command(command, rgb, available)
+            result["command"] = command  # log the resolved form
+
             try:
                 scene = self._perception.get_scene_description(rgb)
             except Exception as vlm_exc:

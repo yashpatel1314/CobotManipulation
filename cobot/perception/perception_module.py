@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from typing import TYPE_CHECKING
 
 log = logging.getLogger(__name__)
@@ -39,6 +40,36 @@ class PerceptionModule:
     depth value to a 3-D world-frame pose using the camera intrinsics and
     extrinsics supplied by CobotEnv.
     """
+
+    # Colour names the planner understands
+    _COLOURS = ("red", "green", "blue", "yellow", "orange", "purple")
+
+    # Tokens that signal an ambiguous reference — VLM resolution needed
+    _AMBIGUOUS_RE = re.compile(
+        r"\b(it|that|this|those|these|"
+        r"the\s+one|the\s+block|the\s+cube|the\s+thing|"
+        r"closest|nearest|furthest|farthest|"
+        r"left\s+one|right\s+one|the\s+other|"
+        r"first|second|third|last)\b",
+        re.IGNORECASE,
+    )
+
+    _RESOLVE_PROMPT = (
+        "You are a robot arm assistant. You can see the tabletop through the robot's camera.\n"
+        "The user has given a voice command that contains ambiguous references — pronouns, "
+        "spatial descriptions, or object references without explicit colour names.\n\n"
+        "Your job: look at the image, identify which coloured block the user is referring to, "
+        "and rewrite the command replacing every ambiguous reference with the specific colour name.\n\n"
+        "Rules:\n"
+        "- Only use these colour names: red, green, blue, yellow, orange, purple.\n"
+        "- If a colour is already explicit, keep it unchanged.\n"
+        "- If you cannot tell which object is meant, keep that part of the command unchanged.\n"
+        "- Return ONLY the rewritten command as a plain sentence — no explanation, no punctuation changes.\n\n"
+        "Example:\n"
+        "  Visible objects: red cube, green cube\n"
+        "  Command: 'pick up that one and put it on the other'\n"
+        "  Response: 'pick up the red cube and put it on the green cube'\n"
+    )
 
     _SYSTEM_PROMPT = (
         "You are a robot perception system. Given a top-down RGB image of a tabletop scene, "
@@ -82,6 +113,78 @@ class PerceptionModule:
 
     def clear_cache(self) -> None:
         self._cache.clear()
+
+    # ------------------------------------------------------------------
+    # Command reference resolution
+    # ------------------------------------------------------------------
+
+    def resolve_command(
+        self,
+        command: str,
+        rgb: np.ndarray,
+        available_colours: list[str],
+    ) -> str:
+        """Rewrite *command* so every ambiguous object reference becomes a
+        concrete colour name.
+
+        Skips the VLM call entirely when the command already names at least
+        one colour AND contains no ambiguous pronouns/spatial tokens — keeps
+        latency at zero for unambiguous commands like "push the red block left".
+
+        Args:
+            command:           raw user command string
+            rgb:               current agentview camera frame (HxWx3 uint8)
+            available_colours: colours currently on the table (e.g. ["red","green","blue"])
+
+        Returns:
+            Rewritten command string (falls back to original on any error).
+        """
+        if not self._needs_resolution(command):
+            return command
+
+        if self._client is None:
+            log.debug("[resolve] no VLM client — returning command unchanged")
+            return command
+
+        colour_list = ", ".join(available_colours) if available_colours else "red, green"
+        user_text = (
+            f"Visible objects on the table: {colour_list} cube(s).\n"
+            f"Command: \"{command}\""
+        )
+
+        try:
+            b64 = _encode_image(rgb)
+            response = self._client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": self._RESOLVE_PROMPT},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url",
+                             "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                            {"type": "text", "text": user_text},
+                        ],
+                    },
+                ],
+                max_tokens=128,
+                temperature=0.0,
+            )
+            resolved = response.choices[0].message.content.strip().strip('"')
+            if resolved:
+                log.info("[resolve] '%s' → '%s'", command, resolved)
+                return resolved
+        except Exception as exc:
+            log.warning("[resolve] VLM call failed (%s) — using original command", exc)
+
+        return command
+
+    def _needs_resolution(self, command: str) -> bool:
+        """Return True when the command has no colour word OR has ambiguous tokens."""
+        cmd = command.lower()
+        has_colour = any(c in cmd for c in self._COLOURS)
+        has_ambiguous = bool(self._AMBIGUOUS_RE.search(cmd))
+        return has_ambiguous or not has_colour
 
     def get_scene_description(self, rgb: np.ndarray, max_retries: int = 3) -> dict:
         """Return a JSON scene description from the VLM.
