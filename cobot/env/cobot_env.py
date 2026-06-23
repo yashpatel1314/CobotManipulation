@@ -157,6 +157,8 @@ class CobotEnv:
             self._viewer.cam.distance = cam["distance"]
             self._viewer.cam.azimuth = cam["azimuth"]
             self._viewer.cam.elevation = cam["elevation"]
+            # Hide collision geoms (group 0, green) — show only visual geoms (group 1)
+            self._viewer.opt.geomgroup[0] = 0
         if self._viewer.is_running():
             self._viewer.sync()
 
