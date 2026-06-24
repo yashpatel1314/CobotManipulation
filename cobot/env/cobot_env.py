@@ -73,9 +73,15 @@ class CobotEnv:
             extra_objects_cfg = [{"color": c, "shape": "cube"} for c in extra_colors]
         extra_objects_cfg = extra_objects_cfg[:4]
 
+        rand_cfg = config.get("randomization", {})
+        dist_cfg = config.get("distractors", {})
+
         self._env = MultiObjectStack(
             robots=config.get("robot", "Panda"),
             extra_objects=extra_objects_cfg,
+            distractor_count=dist_cfg.get("count", 0),
+            domain_randomization=rand_cfg.get("enabled", False),
+            randomization_config=rand_cfg,
             has_renderer=False,
             has_offscreen_renderer=True,
             use_camera_obs=True,
@@ -341,6 +347,13 @@ class CobotEnv:
 
         raise ValueError(f"Cannot resolve object '{obj_id}' to a sim position")
 
+    def get_distractor_positions(self) -> list[np.ndarray]:
+        """Return world-frame positions of all distractor obstacles."""
+        positions = []
+        for bid in getattr(self._env, "_distractor_body_ids", []):
+            positions.append(np.array(self._env.sim.data.body_xpos[bid]))
+        return positions
+
     def get_sim_scene_description(self) -> dict:
         """Scene description from ground-truth sim state (VLM fallback)."""
         objects = []
@@ -359,7 +372,12 @@ class CobotEnv:
                     "pixel_u": 128,
                     "pixel_v": 128,
                 })
-        return {"objects": objects, "catalog": self.get_catalog()}
+        distractors = [
+            {"id": f"distractor{i}", "color": "grey", "shape": "cube",
+             "pos": pos.tolist(), "pixel_u": 128, "pixel_v": 128}
+            for i, pos in enumerate(self.get_distractor_positions())
+        ]
+        return {"objects": objects, "distractors": distractors, "catalog": self.get_catalog()}
 
     def get_object_states(self) -> dict[str, Pose6DOF]:
         states: dict[str, Pose6DOF] = {}

@@ -18,6 +18,11 @@ env:
       shape: cone
     - color: purple
       shape: cube
+  distractors:           # grey obstacle cubes always on the table
+    count: 2
+  randomization:         # domain randomisation (useful for robustness evaluation)
+    enabled: false
+    position_noise: 0.03 # metres of uniform noise added to red/green start pos
 
 perception:
   vlm_provider: groq             # openai | groq | local
@@ -52,6 +57,6 @@ training:
   device: auto                  # auto | cpu | cuda
 
 evaluation:
-  episodes: 100
+  episodes: 3            # repetitions per task for the benchmark suite
   seed: 0
   render: false

@@ -6,6 +6,7 @@ from .grasp import GraspSkill
 from .place_at import PlaceAtSkill
 from .place_on import PlaceOnSkill
 from .push import PushSkill
+from .rotate import RotateSkill
 from .spawn import SpawnSkill
 
 if TYPE_CHECKING:
@@ -19,6 +20,7 @@ _SKILL_CLASSES = {
     "place_on": PlaceOnSkill,
     "place_at": PlaceAtSkill,
     "push":     PushSkill,
+    "rotate":   RotateSkill,
     "spawn":    SpawnSkill,
 }
 

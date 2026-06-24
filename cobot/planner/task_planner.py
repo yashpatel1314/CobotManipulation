@@ -23,68 +23,60 @@ _SYSTEM_PROMPT = """\
 You are a robot task planner. Given a JSON scene description and a user command, \
 output a JSON array of skill calls to execute on the robot arm.
 
-The scene description includes a "catalog" mapping each colour to its object_id and shape, \
-e.g. {"blue": {"id": "blue_cylinder", "shape": "cylinder"}, "yellow": {"id": "yellow_sphere", ...}}.
+The scene has a "catalog" (colour → {id, shape}) and "objects" listing on-table items.
 Always use the object_id from the catalog, NOT a guessed "<color>_cube" form.
 
-Available skills and their signatures:
-- spawn(object_id: str)                       → add a new object to the scene; \
-use the id from the catalog (e.g. "blue_cylinder"). Use this BEFORE manipulating a new object.
-- grasp(object_id: str)                       → pick up an object already in the scene
-- place_on(object_id: str, target_id: str)    → place held object on top of another
-- place_at(object_id: str, position: str)     → place held object at a named position; \
-position is one of: "left", "right", "center", "far_left", "far_right", \
-"top", "bottom", "top_left", "top_right", "bottom_left", "bottom_right", \
-"adj_left", "adj_right"
-- push(object_id: str, direction: str)        → push an object; \
-direction is one of: "left", "right", "forward", "backward"
-
-Position notes:
-- "adj_left" and "adj_right" place objects ~4 cm apart at table centre — use these \
-as the TWO BASE objects for a pyramid so they are touching and the apex can be stacked on one.
-- Blue/yellow/orange/purple objects are NOT on the table at startup; always spawn them first.
-- Red and green are always on the table; do NOT spawn them.
+Skills:
+- spawn(object_id)                      → add off-table object; REQUIRED before grasping blue/yellow/orange/purple
+- grasp(object_id)                      → pick up an on-table object
+- place_on(object_id, target_id)        → stack held object on top of target
+- place_at(object_id, position)         → move to named position: left, right, center, far_left, far_right,
+                                          top, bottom, top_left, top_right, bottom_left, bottom_right,
+                                          adj_left, adj_right
+- push(object_id, direction)            → push; direction: left, right, forward, backward
+- rotate(object_id, direction)          → rotate held object; direction: clockwise, counterclockwise
 
 Rules:
-1. Use object_ids exactly as they appear in the catalog or scene description.
-2. Match user colour references to catalog entries by colour name.
-3. Skills must be in execution order (e.g. grasp before place_on; spawn before grasp of new object).
-4. Output ONLY valid JSON — a list of objects with "skill" and "args" keys. No explanation.
-5. If the command is truly impossible given the scene, output: {"error": "reason"}.
-6. If the command is ambiguous, output: {"clarify": "one clarifying question"}.
+1. Use ids from catalog exactly. Red/green are always on-table; do NOT spawn them.
+2. Sort/line-up: use place_at with spread positions (far_left → left → center → right → far_right).
+3. adj_left/adj_right are for pyramid bases (~4 cm apart, touching).
+4. Output ONLY valid JSON — a list with "skill" and "args" keys.
 
-Example scene catalog: {"blue": {"id": "blue_cylinder"}, "yellow": {"id": "yellow_sphere"},
-  "orange": {"id": "orange_cone"}, "purple": {"id": "purple_cube"},
-  "red": {"id": "red_cube"}, "green": {"id": "green_cube"}}
+Example 1 — pick up red:
+[{"skill":"grasp","args":{"object_id":"red_cube"}}]
 
-Example 1: command "pick up the red block":
-[{"skill": "grasp", "args": {"object_id": "red_cube"}}]
+Example 2 — spawn blue cylinder and place at top right:
+[{"skill":"spawn","args":{"object_id":"blue_cylinder"}},
+ {"skill":"grasp","args":{"object_id":"blue_cylinder"}},
+ {"skill":"place_at","args":{"object_id":"blue_cylinder","position":"top_right"}}]
 
-Example 2: command "put the blue cylinder at the top right corner":
-[
-  {"skill": "spawn",    "args": {"object_id": "blue_cylinder"}},
-  {"skill": "grasp",    "args": {"object_id": "blue_cylinder"}},
-  {"skill": "place_at", "args": {"object_id": "blue_cylinder", "position": "top_right"}}
-]
+Example 3 — rotate red cube clockwise:
+[{"skill":"grasp","args":{"object_id":"red_cube"}},
+ {"skill":"rotate","args":{"object_id":"red_cube","direction":"clockwise"}}]
 
-Example 3: command "stack the yellow sphere on the red block":
-[
-  {"skill": "spawn",    "args": {"object_id": "yellow_sphere"}},
-  {"skill": "grasp",    "args": {"object_id": "yellow_sphere"}},
-  {"skill": "place_on", "args": {"object_id": "yellow_sphere", "target_id": "red_cube"}}
-]
+Example 4 — sort all 3 on-table objects (red, green, blue_cylinder) left to right:
+[{"skill":"grasp","args":{"object_id":"red_cube"}},
+ {"skill":"place_at","args":{"object_id":"red_cube","position":"far_left"}},
+ {"skill":"grasp","args":{"object_id":"green_cube"}},
+ {"skill":"place_at","args":{"object_id":"green_cube","position":"center"}},
+ {"skill":"grasp","args":{"object_id":"blue_cylinder"}},
+ {"skill":"place_at","args":{"object_id":"blue_cylinder","position":"far_right"}}]
 
-Example 4: command "make a pyramid with yellow and purple at the bottom and green on top":
-[
-  {"skill": "spawn",    "args": {"object_id": "yellow_sphere"}},
-  {"skill": "grasp",    "args": {"object_id": "yellow_sphere"}},
-  {"skill": "place_at", "args": {"object_id": "yellow_sphere", "position": "adj_left"}},
-  {"skill": "spawn",    "args": {"object_id": "purple_cube"}},
-  {"skill": "grasp",    "args": {"object_id": "purple_cube"}},
-  {"skill": "place_at", "args": {"object_id": "purple_cube", "position": "adj_right"}},
-  {"skill": "grasp",    "args": {"object_id": "green_cube"}},
-  {"skill": "place_on", "args": {"object_id": "green_cube", "target_id": "yellow_sphere"}}
-]
+Example 5 — pyramid with yellow and purple at bottom, green on top:
+[{"skill":"spawn","args":{"object_id":"yellow_sphere"}},
+ {"skill":"grasp","args":{"object_id":"yellow_sphere"}},
+ {"skill":"place_at","args":{"object_id":"yellow_sphere","position":"adj_left"}},
+ {"skill":"spawn","args":{"object_id":"purple_cube"}},
+ {"skill":"grasp","args":{"object_id":"purple_cube"}},
+ {"skill":"place_at","args":{"object_id":"purple_cube","position":"adj_right"}},
+ {"skill":"grasp","args":{"object_id":"green_cube"}},
+ {"skill":"place_on","args":{"object_id":"green_cube","target_id":"yellow_sphere"}}]
+
+Example 6 — clear the table (park every object to the sides):
+[{"skill":"grasp","args":{"object_id":"red_cube"}},
+ {"skill":"place_at","args":{"object_id":"red_cube","position":"far_right"}},
+ {"skill":"grasp","args":{"object_id":"green_cube"}},
+ {"skill":"place_at","args":{"object_id":"green_cube","position":"far_left"}}]
 """
 
 _REPLAN_PROMPT = """\
@@ -308,6 +300,67 @@ class RuleBasedPlanner:
                                            "target_id": base0_id}),
                 ]
                 return calls
+
+        # ── Sort / line-up / arrange all objects ────────────────────────────
+        # "sort", "line up", "arrange", "put in a line", "organize"
+        sort_m = re.search(
+            r"\b(sort|line\s+up|line\s+them\s+up|arrange|organize|organise|"
+            r"put\s+(?:them\s+)?in\s+a\s+(?:straight\s+)?line)\b",
+            cmd,
+        )
+        if sort_m:
+            catalog_colors = set(scene.get("catalog", {}).keys())
+            on_table = [o for o in scene.get("objects", [])
+                        if o.get("color") in catalog_colors and o.get("id")]
+            if on_table:
+                # Sort alphabetically by colour for deterministic ordering
+                on_table.sort(key=lambda o: o.get("color", ""))
+                spread = ["far_left", "left", "center", "right", "far_right"]
+                calls: list[SkillCall] = []
+                for i, obj in enumerate(on_table[:5]):
+                    oid = obj["id"]
+                    calls += [
+                        SkillCall("grasp",    {"object_id": oid}),
+                        SkillCall("place_at", {"object_id": oid, "position": spread[i]}),
+                    ]
+                return calls
+
+        # ── Clear table / clear area ─────────────────────────────────────────
+        clear_m = re.search(
+            r"\b(clear|clean\s+up|clean\s+off|remove\s+everything|tidy\s+up|"
+            r"move\s+everything|sweep\s+(?:everything|all))\b",
+            cmd,
+        )
+        if clear_m:
+            catalog_colors = set(scene.get("catalog", {}).keys())
+            on_table = [o for o in scene.get("objects", [])
+                        if o.get("color") in catalog_colors and o.get("id")]
+            if on_table:
+                parking = ["far_right", "far_left", "top_right", "top_left", "bottom_right"]
+                calls: list[SkillCall] = []
+                for i, obj in enumerate(on_table[:5]):
+                    oid = obj["id"]
+                    calls += [
+                        SkillCall("grasp",    {"object_id": oid}),
+                        SkillCall("place_at", {"object_id": oid, "position": parking[i % len(parking)]}),
+                    ]
+                return calls
+
+        # ── Rotate ──────────────────────────────────────────────────────────
+        rotate_m = re.search(r"\b(rotate|spin|turn)\b", cmd)
+        if rotate_m:
+            colour = _find_colour(cmd)
+            direction = "clockwise"
+            if re.search(r"\b(counter\s*clockwise|anti\s*clockwise|left)\b", cmd):
+                direction = "counterclockwise"
+            elif re.search(r"\b(clockwise|right)\b", cmd):
+                direction = "clockwise"
+            if colour:
+                obj_id = colour_to_id.get(colour, f"{colour}_cube")
+                return [
+                    SkillCall("grasp",  {"object_id": obj_id}),
+                    SkillCall("rotate", {"object_id": obj_id, "direction": direction}),
+                ]
 
         # ── Spawn ───────────────────────────────────────────────────────────
         spawn_m = re.search(r"\b(spawn|add|create|bring\s+in|introduce)\b", cmd)
