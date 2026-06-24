@@ -139,6 +139,9 @@ class CobotOrchestrator:
             except Exception as vlm_exc:
                 log.warning("VLM scene description failed (%s); using sim ground-truth fallback.", vlm_exc)
                 scene = self._env.get_sim_scene_description()
+            # Always inject the sim catalog so the planner knows each colour's shape/id
+            if "catalog" not in scene:
+                scene["catalog"] = self._env.get_catalog()
             plan  = self._planner.plan(command, scene)
         except Exception as exc:
             log.warning("Planning failed: %s", exc)
@@ -172,6 +175,8 @@ class CobotOrchestrator:
                 except Exception as vlm_exc:
                     log.warning("VLM replan scene failed (%s); using sim ground-truth fallback.", vlm_exc)
                     scene = self._env.get_sim_scene_description()
+                if "catalog" not in scene:
+                    scene["catalog"] = self._env.get_catalog()
                 try:
                     plan = self._planner.replan(call, reason, scene, command)
                     replan_count += 1

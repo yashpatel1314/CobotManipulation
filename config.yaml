@@ -9,11 +9,15 @@ env:
   horizon: 2000
   control_freq: 20
   render: true
-  extra_colors:          # pre-loaded but off-table; spawn via "spawn a blue block"
-    - blue
-    - yellow
-    - orange
-    - purple
+  extra_objects:         # pre-loaded off-table; each has a colour and shape
+    - color: blue
+      shape: cylinder
+    - color: yellow
+      shape: sphere
+    - color: orange
+      shape: cone
+    - color: purple
+      shape: cube
 
 perception:
   vlm_provider: groq             # openai | groq | local

@@ -25,8 +25,7 @@ class PlaceOnSkill(Skill):
 
     NAME = "place_on"
 
-    APPROACH_OFFSET = np.array([0.0, 0.0, 0.12])  # metres above target
-    PLACE_OFFSET    = np.array([0.0, 0.0, 0.05])   # slight clearance above target top
+    APPROACH_OFFSET = np.array([0.0, 0.0, 0.12])  # metres above target centre
 
     def execute(
         self,
@@ -43,9 +42,20 @@ class PlaceOnSkill(Skill):
             return self._run_policy(env, target_pose.position(), np.array([1.0, 0.0, 0.0, 0.0]))
 
         target_pos = env.get_object_pos(target_id)
-        return self._scripted_place_on(env, target_pos, object_id)
+        return self._scripted_place_on(env, target_pos, object_id, target_id)
 
-    def _scripted_place_on(self, env: "CobotEnv", target_pos: np.ndarray, object_id: str = "") -> bool:
+    def _scripted_place_on(
+        self,
+        env: "CobotEnv",
+        target_pos: np.ndarray,
+        object_id: str = "",
+        target_id: str = "",
+    ) -> bool:
+        # Shape-aware stacking height: target top surface + held object half-height
+        target_half_h = env.get_object_half_height(target_id) if target_id else 0.020
+        held_half_h   = env.get_object_half_height(object_id) if object_id else 0.020
+        place_z       = target_half_h + held_half_h + 0.010
+
         # Phase 1: move above target
         ok = self._move_to_target(
             env, target_pos + self.APPROACH_OFFSET, gripper_cmd=1.0
@@ -55,7 +65,10 @@ class PlaceOnSkill(Skill):
 
         # Phase 2: lower onto target
         ok = self._move_to_target(
-            env, target_pos + self.PLACE_OFFSET, tolerance=0.015, gripper_cmd=1.0
+            env,
+            target_pos + np.array([0.0, 0.0, place_z]),
+            tolerance=0.015,
+            gripper_cmd=1.0,
         )
         if not ok:
             return False
@@ -68,10 +81,10 @@ class PlaceOnSkill(Skill):
         retreat = np.array([ee_pos[0], ee_pos[1], ee_pos[2] + 0.10])
         self._move_to_target(env, retreat, gripper_cmd=-1.0)
 
-        # Verify the held object is now resting on the target (above target top surface)
+        # Verify the held object is now resting above the target's top surface
         if object_id:
             placed_pos = env.get_object_pos(object_id)
-            target_top = target_pos[2] + 0.025  # cube half-height
+            target_top = target_pos[2] + target_half_h
             return bool(placed_pos[2] > target_top + 0.01)
         return True
 

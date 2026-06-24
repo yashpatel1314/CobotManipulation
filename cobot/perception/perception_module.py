@@ -58,26 +58,29 @@ class PerceptionModule:
         "You are a robot arm assistant. You can see the tabletop through the robot's camera.\n"
         "The user has given a voice command that contains ambiguous references — pronouns, "
         "spatial descriptions, or object references without explicit colour names.\n\n"
-        "Your job: look at the image, identify which coloured block the user is referring to, "
-        "and rewrite the command replacing every ambiguous reference with the specific colour name.\n\n"
+        "Your job: look at the image, identify which coloured object the user is referring to, "
+        "and rewrite the command replacing every ambiguous reference with the specific colour name "
+        "and shape (e.g. 'blue cylinder', 'yellow sphere', 'orange cone', 'red cube').\n\n"
         "Rules:\n"
-        "- Only use these colour names: red, green, blue, yellow, orange, purple.\n"
+        "- Colours: red, green, blue, yellow, orange, purple.\n"
+        "- Shapes: cube (box), cylinder (tube), sphere (ball), cone.\n"
         "- If a colour is already explicit, keep it unchanged.\n"
         "- If you cannot tell which object is meant, keep that part of the command unchanged.\n"
         "- Return ONLY the rewritten command as a plain sentence — no explanation, no punctuation changes.\n\n"
         "Example:\n"
-        "  Visible objects: red cube, green cube\n"
+        "  Visible objects: red cube, green cube, blue cylinder\n"
         "  Command: 'pick up that one and put it on the other'\n"
-        "  Response: 'pick up the red cube and put it on the green cube'\n"
+        "  Response: 'pick up the blue cylinder and put it on the red cube'\n"
     )
 
     _SYSTEM_PROMPT = (
         "You are a robot perception system. Given a top-down RGB image of a tabletop scene, "
-        "identify all visible coloured blocks and cylinders on the table surface. "
+        "identify all visible coloured objects on the table surface. "
+        "Objects may be cubes (boxes), cylinders (tubes), spheres (balls), or cones. "
         "Ignore the robot arm, gripper, and any mechanical parts — focus only on the coloured objects.\n"
         "Return ONLY a raw JSON object (no prose, no markdown, no explanation) with this exact structure:\n"
         '{"objects": [{"id": "<color>_<shape>", "color": "<color>", '
-        '"shape": "cube|cylinder", "pixel_u": <int>, "pixel_v": <int>}]}\n'
+        '"shape": "cube|cylinder|sphere|cone", "pixel_u": <int>, "pixel_v": <int>}]}\n'
         "pixel_u is the horizontal pixel coordinate (left=0), "
         "pixel_v is the vertical pixel coordinate (top=0). "
         "Use colour names: red, blue, green, yellow, orange, purple. "
@@ -148,7 +151,8 @@ class PerceptionModule:
 
         colour_list = ", ".join(available_colours) if available_colours else "red, green"
         user_text = (
-            f"Visible objects on the table: {colour_list} cube(s).\n"
+            f"Objects currently on the table: {colour_list}.\n"
+            f"(Each colour has a specific shape: cylinders, spheres, cones, or cubes.)\n"
             f"Command: \"{command}\""
         )
 
@@ -349,12 +353,21 @@ class PerceptionModule:
         for obj in scene.get("objects", []):
             if obj.get("id") == obj_id:
                 return obj
-            # Fuzzy match: "red_block" matches {"color": "red", "shape": "cube"}
-            color, _, shape = obj_id.partition("_")
-            shape_map = {"block": "cube", "cube": "cube", "cylinder": "cylinder"}
+            # Fuzzy: "red_block" matches {"color": "red", "shape": "cube"}
+            color = obj_id.split("_")[0]
+            shape_token = obj_id[len(color) + 1:] if "_" in obj_id else ""
+            shape_map = {
+                "block": "cube", "cube": "cube", "box": "cube",
+                "cylinder": "cylinder", "tube": "cylinder",
+                "sphere": "sphere", "ball": "sphere",
+                "cone": "cone",
+            }
             if (
                 obj.get("color") == color
-                and shape_map.get(shape) == obj.get("shape")
+                and shape_map.get(shape_token, shape_token) == obj.get("shape")
             ):
+                return obj
+            # Colour-only match as last resort
+            if obj.get("color") == color:
                 return obj
         raise ValueError(f"Object '{obj_id}' not found in scene: {scene}")

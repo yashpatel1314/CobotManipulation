@@ -66,11 +66,16 @@ class CobotEnv:
         h = config.get("camera_height", 256)
         w = config.get("camera_width", 256)
 
-        extra_colors: list[str] = config.get("extra_colors", [])[:4]
+        # Parse extra_objects (new format) with backward-compat fallback to extra_colors
+        extra_objects_cfg: list[dict] = config.get("extra_objects", [])
+        if not extra_objects_cfg:
+            extra_colors = config.get("extra_colors", [])[:4]
+            extra_objects_cfg = [{"color": c, "shape": "cube"} for c in extra_colors]
+        extra_objects_cfg = extra_objects_cfg[:4]
 
         self._env = MultiObjectStack(
             robots=config.get("robot", "Panda"),
-            extra_colors=extra_colors,
+            extra_objects=extra_objects_cfg,
             has_renderer=False,
             has_offscreen_renderer=True,
             use_camera_obs=True,
@@ -84,10 +89,14 @@ class CobotEnv:
             reward_shaping=True,
         )
 
-        # Build dynamic color → sim-name mapping
-        self._color_to_sim: dict[str, str] = {"red": "cubeA", "green": "cubeB"}
-        for i, color in enumerate(extra_colors):
-            self._color_to_sim[color] = _EXTRA_SLOTS[i]
+        # Build color → sim-name and color → shape mappings
+        self._color_to_sim:   dict[str, str] = {"red": "cubeA", "green": "cubeB"}
+        self._color_to_shape: dict[str, str] = {"red": "cube",  "green": "cube"}
+        for i, obj_spec in enumerate(extra_objects_cfg):
+            color = obj_spec["color"]
+            shape = obj_spec.get("shape", "cube")
+            self._color_to_sim[color]   = _EXTRA_SLOTS[i]
+            self._color_to_shape[color] = shape
 
         self._spawned_colors: set[str] = set()
 
@@ -168,6 +177,33 @@ class CobotEnv:
             self._viewer = None
         self._env.close()
 
+    # Vertical half-extent of each shape type (used for stacking height calculations)
+    _SHAPE_HALF_HEIGHTS: dict[str, float] = {
+        "cube":     0.020,
+        "cylinder": 0.025,
+        "sphere":   0.025,
+        "cone":     0.020,
+    }
+
+    def object_id(self, color: str) -> str:
+        """Return the canonical object ID for a colour (e.g. 'blue_cylinder')."""
+        shape = self._color_to_shape.get(color, "cube")
+        return f"{color}_{shape}"
+
+    def get_object_half_height(self, obj_id: str) -> float:
+        """Return the vertical half-extent of an object for stacking calculations."""
+        color = obj_id.split("_")[0]
+        shape = self._color_to_shape.get(color, "cube")
+        return self._SHAPE_HALF_HEIGHTS.get(shape, 0.020)
+
+    def get_catalog(self) -> dict[str, dict]:
+        """Return a mapping of colour → {shape, id} for all objects in the env."""
+        return {
+            color: {"shape": self._color_to_shape.get(color, "cube"),
+                    "id":    self.object_id(color)}
+            for color in self._color_to_sim
+        }
+
     # ------------------------------------------------------------------
     # Object spawning
     # ------------------------------------------------------------------
@@ -191,11 +227,11 @@ class CobotEnv:
             y = rng.uniform(-0.10, 0.10)
             candidate = np.array([x, y, z])
             collision = False
-            for other_color, other_sim in self._color_to_sim.items():
+            for other_color in self._color_to_sim:
                 if other_color == color:
                     continue
                 try:
-                    other_pos = self.get_object_pos(f"{other_color}_cube")
+                    other_pos = self.get_object_pos(self.object_id(other_color))
                     if other_pos[2] > 0.5 and np.linalg.norm(candidate[:2] - other_pos[:2]) < 0.08:
                         collision = True
                         break
@@ -308,20 +344,22 @@ class CobotEnv:
     def get_sim_scene_description(self) -> dict:
         """Scene description from ground-truth sim state (VLM fallback)."""
         objects = []
-        for color, sim_name in self._color_to_sim.items():
+        for color in self._color_to_sim:
+            oid = self.object_id(color)
+            shape = self._color_to_shape.get(color, "cube")
             try:
-                pos = self.get_object_pos(f"{color}_cube")
+                pos = self.get_object_pos(oid)
             except ValueError:
                 continue
-            if pos[2] > 0.5:   # on-table check
+            if pos[2] > 0.5:
                 objects.append({
-                    "id": f"{color}_cube",
+                    "id": oid,
                     "color": color,
-                    "shape": "cube",
+                    "shape": shape,
                     "pixel_u": 128,
                     "pixel_v": 128,
                 })
-        return {"objects": objects}
+        return {"objects": objects, "catalog": self.get_catalog()}
 
     def get_object_states(self) -> dict[str, Pose6DOF]:
         states: dict[str, Pose6DOF] = {}

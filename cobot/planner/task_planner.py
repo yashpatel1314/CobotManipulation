@@ -23,9 +23,13 @@ _SYSTEM_PROMPT = """\
 You are a robot task planner. Given a JSON scene description and a user command, \
 output a JSON array of skill calls to execute on the robot arm.
 
+The scene description includes a "catalog" mapping each colour to its object_id and shape, \
+e.g. {"blue": {"id": "blue_cylinder", "shape": "cylinder"}, "yellow": {"id": "yellow_sphere", ...}}.
+Always use the object_id from the catalog, NOT a guessed "<color>_cube" form.
+
 Available skills and their signatures:
-- spawn(object_id: str)                       → add a new coloured cube to the scene; \
-object_id is "<color>_cube" (e.g. "blue_cube"). Use this BEFORE manipulating a new object.
+- spawn(object_id: str)                       → add a new object to the scene; \
+use the id from the catalog (e.g. "blue_cylinder"). Use this BEFORE manipulating a new object.
 - grasp(object_id: str)                       → pick up an object already in the scene
 - place_on(object_id: str, target_id: str)    → place held object on top of another
 - place_at(object_id: str, position: str)     → place held object at a named position; \
@@ -36,45 +40,50 @@ position is one of: "left", "right", "center", "far_left", "far_right", \
 direction is one of: "left", "right", "forward", "backward"
 
 Position notes:
-- "adj_left" and "adj_right" place cubes ~4 cm apart at table centre — use these \
-as the TWO BASE cubes for a pyramid so they are touching and the apex can be stacked on one.
-- Cubes blue/yellow/orange/purple are NOT on the table at startup; always spawn them first.
+- "adj_left" and "adj_right" place objects ~4 cm apart at table centre — use these \
+as the TWO BASE objects for a pyramid so they are touching and the apex can be stacked on one.
+- Blue/yellow/orange/purple objects are NOT on the table at startup; always spawn them first.
 - Red and green are always on the table; do NOT spawn them.
 
 Rules:
-1. Use object_ids exactly as they appear in the scene description, or "<color>_cube" for spawn.
-2. Match user color references to scene objects by color.
+1. Use object_ids exactly as they appear in the catalog or scene description.
+2. Match user colour references to catalog entries by colour name.
 3. Skills must be in execution order (e.g. grasp before place_on; spawn before grasp of new object).
 4. Output ONLY valid JSON — a list of objects with "skill" and "args" keys. No explanation.
 5. If the command is truly impossible given the scene, output: {"error": "reason"}.
 6. If the command is ambiguous, output: {"clarify": "one clarifying question"}.
 
+Example scene catalog: {"blue": {"id": "blue_cylinder"}, "yellow": {"id": "yellow_sphere"},
+  "orange": {"id": "orange_cone"}, "purple": {"id": "purple_cube"},
+  "red": {"id": "red_cube"}, "green": {"id": "green_cube"}}
+
 Example 1: command "pick up the red block":
 [{"skill": "grasp", "args": {"object_id": "red_cube"}}]
 
-Example 2: command "put the red block at the top right corner":
+Example 2: command "put the blue cylinder at the top right corner":
 [
-  {"skill": "grasp", "args": {"object_id": "red_cube"}},
-  {"skill": "place_at", "args": {"object_id": "red_cube", "position": "top_right"}}
+  {"skill": "spawn",    "args": {"object_id": "blue_cylinder"}},
+  {"skill": "grasp",    "args": {"object_id": "blue_cylinder"}},
+  {"skill": "place_at", "args": {"object_id": "blue_cylinder", "position": "top_right"}}
 ]
 
-Example 3: command "spawn a blue block then move it to the left":
+Example 3: command "stack the yellow sphere on the red block":
 [
-  {"skill": "spawn",    "args": {"object_id": "blue_cube"}},
-  {"skill": "grasp",    "args": {"object_id": "blue_cube"}},
-  {"skill": "place_at", "args": {"object_id": "blue_cube", "position": "left"}}
+  {"skill": "spawn",    "args": {"object_id": "yellow_sphere"}},
+  {"skill": "grasp",    "args": {"object_id": "yellow_sphere"}},
+  {"skill": "place_on", "args": {"object_id": "yellow_sphere", "target_id": "red_cube"}}
 ]
 
 Example 4: command "make a pyramid with yellow and purple at the bottom and green on top":
 [
-  {"skill": "spawn",    "args": {"object_id": "yellow_cube"}},
-  {"skill": "grasp",    "args": {"object_id": "yellow_cube"}},
-  {"skill": "place_at", "args": {"object_id": "yellow_cube", "position": "adj_left"}},
+  {"skill": "spawn",    "args": {"object_id": "yellow_sphere"}},
+  {"skill": "grasp",    "args": {"object_id": "yellow_sphere"}},
+  {"skill": "place_at", "args": {"object_id": "yellow_sphere", "position": "adj_left"}},
   {"skill": "spawn",    "args": {"object_id": "purple_cube"}},
   {"skill": "grasp",    "args": {"object_id": "purple_cube"}},
   {"skill": "place_at", "args": {"object_id": "purple_cube", "position": "adj_right"}},
   {"skill": "grasp",    "args": {"object_id": "green_cube"}},
-  {"skill": "place_on", "args": {"object_id": "green_cube", "target_id": "yellow_cube"}}
+  {"skill": "place_on", "args": {"object_id": "green_cube", "target_id": "yellow_sphere"}}
 ]
 """
 
@@ -93,8 +102,25 @@ Revise the plan to complete the original goal. Output only the remaining steps a
 # Colour names we recognise
 _COLOURS = ("red", "green", "blue", "yellow", "orange", "purple")
 
-# Default colour → object_id (scene dict overrides these at plan time)
+# Default colour → object_id (catalog from scene overrides these at plan time)
 _COLOUR_TO_ID: dict[str, str] = {c: f"{c}_cube" for c in _COLOURS}
+
+# Shape synonyms — user may say "block", "ball", "prism", etc.
+_SHAPE_SYNONYMS: dict[str, str] = {
+    "block":    "cube",
+    "cube":     "cube",
+    "box":      "cube",
+    "cylinder": "cylinder",
+    "tube":     "cylinder",
+    "pillar":   "cylinder",
+    "sphere":   "sphere",
+    "ball":     "sphere",
+    "orb":      "sphere",
+    "cone":     "cone",
+    "pyramid":  "cone",
+    "prism":    "cylinder",
+}
+_SHAPE_WORDS = frozenset(_SHAPE_SYNONYMS.keys())
 
 # Direction synonyms
 _DIRECTION_MAP: dict[str, str] = {
@@ -205,6 +231,18 @@ def _find_three_colours(text: str) -> tuple[str | None, str | None, str | None]:
     )
 
 
+def _resolve_id(colour: str, scene: dict) -> str:
+    """Return canonical object_id for a colour using the scene catalog.
+
+    Falls back to "<colour>_cube" when catalog is absent (e.g. test fixtures).
+    """
+    catalog = scene.get("catalog", {})
+    entry = catalog.get(colour)
+    if entry:
+        return entry["id"]
+    return f"{colour}_cube"
+
+
 # Colours that are not on the table at reset and must be spawned before use
 _EXTRA_COLOURS: frozenset[str] = frozenset({"blue", "yellow", "orange", "purple"})
 
@@ -219,13 +257,16 @@ class RuleBasedPlanner:
     def plan(self, command: str, scene: dict) -> list[SkillCall] | None:
         cmd = command.lower().strip()
 
-        # Build scene colour→id map. Always normalise to "<color>_cube" since every
-        # object in this simulation is a cube — VLM shape labels ("cylinder" etc.) are wrong.
+        # Build colour→id map: catalog takes priority, then scene objects, then defaults
         colour_to_id: dict[str, str] = dict(_COLOUR_TO_ID)
         for obj in scene.get("objects", []):
             colour = obj.get("color", "")
-            if colour:
-                colour_to_id[colour] = f"{colour}_cube"
+            oid    = obj.get("id", "")
+            if colour and oid:
+                colour_to_id[colour] = oid
+        for colour, entry in scene.get("catalog", {}).items():
+            if "id" in entry:
+                colour_to_id[colour] = entry["id"]
 
         # ── Pyramid ─────────────────────────────────────────────────────────
         # "pyramid with X and Y at the bottom and Z at the top"
@@ -250,20 +291,21 @@ class RuleBasedPlanner:
                 calls: list[SkillCall] = []
                 base_positions = ["adj_left", "adj_right"]
                 for base_colour, pos in zip(bases, base_positions):
-                    base_id = f"{base_colour}_cube"
+                    base_id = colour_to_id.get(base_colour, f"{base_colour}_cube")
                     if base_colour in _EXTRA_COLOURS:
                         calls.append(SkillCall("spawn", {"object_id": base_id}))
                     calls += [
                         SkillCall("grasp",    {"object_id": base_id}),
                         SkillCall("place_at", {"object_id": base_id, "position": pos}),
                     ]
-                apex_id = f"{apex}_cube"
+                apex_id  = colour_to_id.get(apex, f"{apex}_cube")
+                base0_id = colour_to_id.get(bases[0], f"{bases[0]}_cube")
                 if apex in _EXTRA_COLOURS:
                     calls.append(SkillCall("spawn", {"object_id": apex_id}))
                 calls += [
                     SkillCall("grasp",    {"object_id": apex_id}),
                     SkillCall("place_on", {"object_id": apex_id,
-                                           "target_id": f"{bases[0]}_cube"}),
+                                           "target_id": base0_id}),
                 ]
                 return calls
 
@@ -282,7 +324,7 @@ class RuleBasedPlanner:
             # "put red … then spawn a blue block" correctly identifies blue.
             colour = _find_colour_after(cmd, spawn_m.end()) or _find_colour(cmd)
             if colour:
-                obj_id = f"{colour}_cube"
+                obj_id = colour_to_id.get(colour, f"{colour}_cube")
                 calls: list[SkillCall] = [SkillCall("spawn", {"object_id": obj_id})]
 
                 # "on top of <colour>" / "onto" / "place/put it on the <colour>" → place_on
@@ -297,10 +339,11 @@ class RuleBasedPlanner:
                     c1, c2 = _find_two_colours(cmd)
                     target_colour = c2 if c1 == colour else c1
                     if target_colour:
+                        target_id = colour_to_id.get(target_colour, f"{target_colour}_cube")
                         calls += [
                             SkillCall("grasp",    {"object_id": obj_id}),
                             SkillCall("place_on", {"object_id": obj_id,
-                                                   "target_id": f"{target_colour}_cube"}),
+                                                   "target_id": target_id}),
                         ]
                         return calls
 

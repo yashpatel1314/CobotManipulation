@@ -17,7 +17,7 @@ config["env"]["render"] = False
 orch = CobotOrchestrator(config)
 
 def pos(color):
-    return orch._env.get_object_pos(f"{color}_cube").copy()
+    return orch._env.get_object_pos(orch._env.object_id(color)).copy()
 
 def reset():
     orch._env.reset()
@@ -56,29 +56,32 @@ r = run("move the blue block to the right side of the table", "move_blue_right")
 results.append(r)
 print(f"  blue pos after move: {np.round(pos('blue'), 3)}")
 
-# ── 3. Spawn yellow, stack blue on yellow ────────────────────────────────────
-print("\n── Spawn yellow + stack blue on yellow ──────────────────────────────")
+# ── 3. Spawn blue cylinder + stack it on the red cube ────────────────────────
+print("\n── Spawn blue cylinder + stack on red ───────────────────────────────")
 reset()
 r = run("spawn a blue block", "spawn_blue_2")
 results.append(r)
 
-r = run("add a yellow cube to the scene", "spawn_yellow")
+blue_before = pos("blue").copy()
+red_before  = pos("red").copy()
+r = run("put the blue cylinder on top of the red cube", "stack_blue_on_red")
+results.append(r)
+blue_after = pos("blue")
+red_after  = pos("red")
+stacked = blue_after[2] > red_after[2] + 0.01
+print(f"  blue  before={np.round(blue_before,3)}  after={np.round(blue_after,3)}")
+print(f"  red   before={np.round(red_before,3)}   after={np.round(red_after,3)}")
+print(f"  stacked: {stacked}")
+
+# ── 4. Spawn yellow sphere ───────────────────────────────────────────────────
+print("\n── Spawn yellow sphere ──────────────────────────────────────────────")
+reset()
+r = run("add a yellow sphere to the scene", "spawn_yellow")
 results.append(r)
 print(f"  yellow z after spawn: {pos('yellow')[2]:.3f}")
 
-blue_before = pos("blue").copy()
-yellow_before = pos("yellow").copy()
-r = run("put the blue block on top of the yellow block", "stack_blue_on_yellow")
-results.append(r)
-blue_after = pos("blue")
-yellow_after = pos("yellow")
-stacked = blue_after[2] > yellow_after[2] + 0.03
-print(f"  blue  before={np.round(blue_before,3)}  after={np.round(blue_after,3)}")
-print(f"  yellow before={np.round(yellow_before,3)}  after={np.round(yellow_after,3)}")
-print(f"  stacked: {stacked}")
-
-# ── 4. Spawn orange, push it ─────────────────────────────────────────────────
-print("\n── Spawn orange + push ──────────────────────────────────────────────")
+# ── 5. Spawn orange cone, push it ───────────────────────────────────────────
+print("\n── Spawn orange cone + push ─────────────────────────────────────────")
 reset()
 r = run("spawn an orange block", "spawn_orange")
 results.append(r)
