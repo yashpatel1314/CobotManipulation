@@ -37,6 +37,8 @@ Skills:
 - rotate(object_id, direction)          → rotate held object; direction: clockwise, counterclockwise
 - sort()                                → atomically sort ALL on-table objects left-to-right alphabetically
 - clear()                               → atomically move ALL on-table objects to table edges
+- handover(object_id, from_arm, to_arm) → transfer object between arms (dual-arm mode only);
+                                          from_arm/to_arm are 0 (left) or 1 (right)
 
 Rules:
 1. Use ids from catalog exactly. Red/green are always on-table; do NOT spawn them.
@@ -71,6 +73,9 @@ Example 5 — pyramid with yellow and purple at bottom, green on top:
 
 Example 6 — clear/tidy the table:
 [{"skill":"clear","args":{}}]
+
+Example 7 — handover red cube from left arm to right arm (dual-arm):
+[{"skill":"handover","args":{"object_id":"red_cube","from_arm":0,"to_arm":1}}]
 """
 
 _REPLAN_PROMPT = """\
@@ -329,6 +334,22 @@ class RuleBasedPlanner:
                     SkillCall("grasp",  {"object_id": obj_id}),
                     SkillCall("rotate", {"object_id": obj_id, "direction": direction}),
                 ]
+
+        # ── Handover (dual-arm) ─────────────────────────────────────────────
+        handover_m = (
+            re.search(r"\b(handover|hand\s+over|transfer|pass)\b", cmd)
+            or re.search(r"\bhand\b.+\bto\b", cmd)
+        )
+        if handover_m:
+            colour = _find_colour(cmd)
+            # "from left to right" → from_arm=0, to_arm=1; default: left→right
+            from_arm = 1 if re.search(r"\b(from\s+right|right\s+to)\b", cmd) else 0
+            to_arm   = 1 - from_arm
+            if colour:
+                obj_id = colour_to_id.get(colour, f"{colour}_cube")
+                return [SkillCall("handover", {"object_id": obj_id,
+                                               "from_arm": from_arm,
+                                               "to_arm":   to_arm})]
 
         # ── Spawn ───────────────────────────────────────────────────────────
         spawn_m = re.search(r"\b(spawn|add|create|bring\s+in|introduce)\b", cmd)

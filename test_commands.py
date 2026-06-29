@@ -46,19 +46,17 @@ COMMANDS = [
 ]
 
 
-def main() -> int:
-    with open("config.yaml") as f:
-        config = yaml.safe_load(f)
-    config["env"]["render"] = False  # headless — no viewer
+DUAL_ARM_COMMANDS = [
+    ("handover red arm0→arm1", "hand the red cube to the other arm"),
+]
 
-    orch = CobotOrchestrator(config)
-    for noisy in ("robosuite_logs", "robosuite", "numba", "OpenGL", "mujoco"):
-        logging.getLogger(noisy).setLevel(logging.ERROR)
 
+def _run_suite(orch, commands, label_prefix=""):
     results: list[tuple[str, str, bool, dict]] = []
-    for label, cmd in COMMANDS:
+    for label, cmd in commands:
+        full_label = f"{label_prefix}{label}" if label_prefix else label
         print(f"\n{'─'*60}")
-        print(f"[{label}]  {cmd}")
+        print(f"[{full_label}]  {cmd}")
         t0 = time.monotonic()
         orch._env.reset()
         orch._perception.clear_cache()
@@ -73,17 +71,42 @@ def main() -> int:
                     print(f"    failed skill: {s['skill']}({s['args']})")
             if "error" in result:
                 print(f"    error: {result['error']}")
-        results.append((label, cmd, ok, result))
+        results.append((full_label, cmd, ok, result))
+    return results
 
+
+def main() -> int:
+    with open("config.yaml") as f:
+        config = yaml.safe_load(f)
+    config["env"]["render"] = False  # headless — no viewer
+
+    # ── Single-arm suite ──────────────────────────────────────────────────────
+    orch = CobotOrchestrator(config)
+    for noisy in ("robosuite_logs", "robosuite", "numba", "OpenGL", "mujoco"):
+        logging.getLogger(noisy).setLevel(logging.ERROR)
+
+    all_results = _run_suite(orch, COMMANDS)
     orch._env.close()
 
+    # ── Dual-arm suite ────────────────────────────────────────────────────────
+    dual_config = yaml.safe_load(open("config.yaml"))
+    dual_config["env"]["render"] = False
+    dual_config["env"]["dual_arm"] = True
+    dual_config["env"]["distractors"] = {"count": 0}
+    dual_orch = CobotOrchestrator(dual_config)
+    for noisy in ("robosuite_logs", "robosuite", "numba", "OpenGL", "mujoco"):
+        logging.getLogger(noisy).setLevel(logging.ERROR)
+
+    all_results += _run_suite(dual_orch, DUAL_ARM_COMMANDS, label_prefix="dual-arm ")
+    dual_orch._env.close()
+
     # ── Summary ───────────────────────────────────────────────────────────────
-    passed = sum(1 for _, _, ok, _ in results if ok)
-    total = len(results)
+    passed = sum(1 for _, _, ok, _ in all_results if ok)
+    total = len(all_results)
     print(f"\n{'='*60}")
     print(f"RESULTS  {passed}/{total} passed")
     print(f"{'='*60}")
-    for label, cmd, ok, _ in results:
+    for label, cmd, ok, _ in all_results:
         mark = "✓" if ok else "✗"
         print(f"  {mark}  [{label}]  {cmd[:55]}")
     print()

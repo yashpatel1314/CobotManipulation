@@ -119,7 +119,7 @@ def test_unknown_skill_returns_false(skill_library):
 
 def test_available_skills(skill_library):
     skills = skill_library.available_skills
-    assert set(skills) == {"grasp", "place_on", "place_at", "push", "rotate", "sort", "clear", "spawn"}
+    assert set(skills) == {"grasp", "place_on", "place_at", "push", "rotate", "sort", "clear", "spawn", "handover"}
 
 
 # ---------------------------------------------------------------------------
@@ -173,3 +173,30 @@ def test_backproject_identity():
     E = np.eye(4)  # identity: camera frame == world frame
     p = PerceptionModule._backproject(128, 128, 0.5, K, E)
     np.testing.assert_allclose(p, [0.0, 0.0, 0.5], atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Dual-arm environment import and API surface
+# ---------------------------------------------------------------------------
+
+def test_dual_arm_env_import():
+    from cobot.env.dual_arm_env import DualArmCobotEnv
+    assert DualArmCobotEnv
+
+
+def test_handover_skill_import():
+    from cobot.skills.handover import HandoverSkill
+    assert HandoverSkill.NAME == "handover"
+
+
+def test_handover_skill_requires_dual_arm():
+    from cobot.skills.handover import HandoverSkill
+    from unittest.mock import MagicMock
+
+    skill = HandoverSkill({})
+    env = MagicMock(spec=[])  # no active_arm attribute
+    perception = MagicMock()
+
+    import pytest
+    with pytest.raises(RuntimeError, match="DualArmCobotEnv"):
+        skill.execute(env, perception, object_id="red_cube")

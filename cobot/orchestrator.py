@@ -11,6 +11,7 @@ from typing import Literal
 import numpy as np
 
 from cobot.env.cobot_env import CobotEnv
+from cobot.env.dual_arm_env import DualArmCobotEnv
 from cobot.perception.perception_module import PerceptionModule
 from cobot.planner.task_planner import SkillCall, TaskPlanner
 from cobot.skills.skill_library import SkillLibrary
@@ -30,7 +31,11 @@ class CobotOrchestrator:
 
     def __init__(self, config: dict) -> None:
         self._config = config
-        self._env    = CobotEnv(config["env"])
+        env_cfg = config["env"]
+        if env_cfg.get("dual_arm", False):
+            self._env = DualArmCobotEnv(env_cfg)
+        else:
+            self._env = CobotEnv(env_cfg)
         self._voice  = VoiceInterface(config["voice"])
         self._planner = TaskPlanner(config["planner"])
         self._skills  = SkillLibrary(config["skills"])

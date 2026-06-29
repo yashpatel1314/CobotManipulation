@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 from .clear import ClearSkill
 from .grasp import GraspSkill
+from .handover import HandoverSkill
 from .place_at import PlaceAtSkill
 from .place_on import PlaceOnSkill
 from .push import PushSkill
@@ -25,6 +26,7 @@ _SKILL_CLASSES = {
     "rotate":   RotateSkill,
     "sort":     SortSkill,
     "clear":    ClearSkill,
+    "handover": HandoverSkill,
     "spawn":    SpawnSkill,
 }
 

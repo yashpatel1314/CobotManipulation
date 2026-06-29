@@ -289,3 +289,16 @@ def test_rule_grasp_uses_catalog_id():
     p = _rule_planner()
     plan = p.plan("pick up the blue cylinder", _SCENE_ON_TABLE)
     assert any(c.skill == "grasp" and c.args.get("object_id") == "blue_cylinder" for c in plan)
+
+
+def test_rule_handover_returns_atomic_skill():
+    """'hand the red cube to the other arm' should produce a single handover SkillCall."""
+    p = _rule_planner()
+    scene = {
+        "objects": [{"id": "red_cube", "color": "red"}],
+        "catalog": {"red": {"shape": "cube", "id": "red_cube"}},
+    }
+    plan = p.plan("hand the red cube to the other arm", scene)
+    assert len(plan) == 1
+    assert plan[0].skill == "handover"
+    assert plan[0].args.get("object_id") == "red_cube"

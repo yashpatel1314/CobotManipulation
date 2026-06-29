@@ -1,6 +1,8 @@
 env:
   robot: Panda
   controller: BASIC
+  dual_arm: false                # set true for two-Panda dual-arm mode
+  arm_configuration: default    # default | opposed | parallel (dual-arm only)
   camera_height: 256
   camera_width: 256
   cameras:
