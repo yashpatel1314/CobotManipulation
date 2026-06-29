@@ -24,7 +24,7 @@ Language-conditioned tabletop robotic manipulation using a Franka Panda arm in M
            ▼
 ┌─────────────────────┐
 │   Skill Library     │  grasp · place_on · place_at · push · rotate · spawn
-│                     │  sort · clear   (composite: chains grasp + place_at internally)
+│                     │  sort · clear · handover  (dual-arm: place-and-pick transfer)
 │                     │  Scripted PD fallback (no checkpoint needed)
 │                     │  Trained MLP policy (behaviour cloning + optional SAC RL)
 └──────────┬──────────┘
@@ -155,7 +155,8 @@ CobotManipulation/
 ├── cobot/
 │   ├── env/
 │   │   ├── cobot_env.py          # CobotEnv — thin robosuite wrapper
-│   │   └── multi_object_env.py   # MultiObjectStack — shapes, distractors, domain rand
+│   │   ├── multi_object_env.py   # MultiObjectStack — shapes, distractors, domain rand
+│   │   └── dual_arm_env.py       # DualArmCobotEnv — two Pandas, same API as CobotEnv
 │   ├── perception/
 │   │   └── perception_module.py  # VLM scene description + reference resolution
 │   ├── planner/
@@ -170,6 +171,7 @@ CobotManipulation/
 │   │   ├── sort.py               # atomically sort all on-table objects L→R
 │   │   ├── clear.py              # atomically move all on-table objects to edges
 │   │   ├── spawn.py              # teleport off-table object onto surface
+│   │   ├── handover.py           # place-and-pick transfer between arms (dual-arm)
 │   │   └── skill_library.py      # registry and dispatcher
 │   ├── evaluation/
 │   │   └── benchmark.py          # EvaluationBenchmark, TaskSpec, make_standard_tasks
@@ -247,6 +249,7 @@ evaluation:
 | `sort()` | Sort all on-table objects left-to-right alphabetically by colour |
 | `clear()` | Move all on-table objects to table edges |
 | `spawn(object_id)` | Teleport an off-table object onto the surface |
+| `handover(object_id, from_arm, to_arm)` | Transfer object between arms (dual-arm only; place-and-pick) |
 
 Named positions for `place_at`: `left`, `right`, `center`, `far_left`, `far_right`, `top`, `bottom`, `top_left`, `top_right`, `bottom_left`, `bottom_right`, `adj_left`, `adj_right`
 
@@ -284,4 +287,4 @@ python test_spawn.py    # spawn + stack integration tests
 - [x] Phase 3 — Distractor obstacle cubes, shape-aware catalog system
 - [x] Phase 4 — New skills: rotate, sort, clear; longer-horizon planner patterns
 - [x] Phase 5 — Multi-step rule-based planner, LLM examples for all new skills
-- [ ] Phase 6 — Dual-arm manipulation
+- [x] Phase 6 — Dual-arm manipulation: DualArmCobotEnv, HandoverSkill (place-and-pick)
