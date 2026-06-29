@@ -34,6 +34,10 @@ checkpoints/*
 
 # MuJoCo
 .mujoco/
+MUJOCO_LOG.TXT
+
+# VS Code extensions
+*.vsix
 
 # IDE
 .vscode/
