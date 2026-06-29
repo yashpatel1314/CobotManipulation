@@ -32,7 +32,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-VALID_SKILLS = ["grasp", "place_on", "place_at", "push"]
+VALID_SKILLS = ["grasp", "place_on", "place_at", "push", "rotate"]
 
 
 # ---------------------------------------------------------------------------
@@ -144,11 +144,45 @@ def _get_oracle(skill_name: str, env):
 
         return act
 
+    def _rotate_oracle():
+        states = env.get_object_states()
+        obj_pos = states["cubeA"].position()
+        phase = 0
+
+        def act(obs):
+            nonlocal phase
+            rs = env.get_robot_state()
+            ee = rs["ee_pos"]
+            action = np.zeros(env.action_dim)
+            kp = 8.0
+            grasp_targets = [
+                obj_pos + np.array([0, 0, 0.10]),   # pre-grasp
+                obj_pos + np.array([0, 0, 0.015]),  # grasp height
+                obj_pos + np.array([0, 0, 0.015]),  # close gripper
+                obj_pos + np.array([0, 0, 0.15]),   # lift
+            ]
+            gripper_cmds = [-1.0, -1.0, 1.0, 1.0]
+            if phase < len(grasp_targets):
+                delta = grasp_targets[phase] - ee
+                if np.linalg.norm(delta) < 0.02:
+                    phase += 1
+                else:
+                    action[:3] = np.clip(kp * delta, -1.0, 1.0)
+                action[-1] = gripper_cmds[min(phase, len(gripper_cmds) - 1)]
+            else:
+                # Rotate phase: yaw clockwise, keep gripper closed
+                action[5] = -0.8
+                action[-1] = 1.0
+            return action
+
+        return act
+
     oracles = {
         "grasp":    _grasp_oracle(),
         "place_on": _place_on_oracle(),
         "place_at": _grasp_oracle(),  # reuse grasp oracle as placeholder
         "push":     _grasp_oracle(),  # reuse grasp oracle as placeholder
+        "rotate":   _rotate_oracle(),
     }
     return oracles[skill_name]
 

@@ -119,7 +119,7 @@ def test_unknown_skill_returns_false(skill_library):
 
 def test_available_skills(skill_library):
     skills = skill_library.available_skills
-    assert set(skills) == {"grasp", "place_on", "place_at", "push"}
+    assert set(skills) == {"grasp", "place_on", "place_at", "push", "rotate", "sort", "clear", "spawn"}
 
 
 # ---------------------------------------------------------------------------

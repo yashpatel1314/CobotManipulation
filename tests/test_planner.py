@@ -29,7 +29,10 @@ SCENE_TWO_BLOCKS = {
 
 
 def _make_planner(mock_response: str) -> tuple[TaskPlanner, MagicMock]:
-    """Return a TaskPlanner whose OpenAI client returns mock_response."""
+    """Return a TaskPlanner whose LLM client returns mock_response.
+
+    The rule-based layer is bypassed (returns None) so every call hits the mock.
+    """
     config = {
         "llm_model": "gpt-4o",
         "max_replan_attempts": 2,
@@ -37,6 +40,10 @@ def _make_planner(mock_response: str) -> tuple[TaskPlanner, MagicMock]:
     }
     with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
         planner = TaskPlanner(config)
+
+    # Bypass rule-based layer so LLM mock is always exercised
+    planner._rule_planner.plan   = MagicMock(return_value=None)
+    planner._rule_planner.replan = MagicMock(return_value=None)
 
     mock_client = MagicMock()
     choice = MagicMock()
@@ -196,3 +203,89 @@ def test_regression_plan_structure(command, expected_plan):
     planner, _ = _make_planner(response)
     result = planner.plan(command, SCENE_TWO_BLOCKS)
     assert result == expected_plan
+
+
+# ---------------------------------------------------------------------------
+# Rule-based planner — no LLM needed, no mock required
+# These commands are intercepted before any API call.
+# ---------------------------------------------------------------------------
+
+_CATALOG = {
+    "red":    {"id": "red_cube",   "shape": "cube"},
+    "green":  {"id": "green_cube", "shape": "cube"},
+    "blue":   {"id": "blue_cylinder", "shape": "cylinder"},
+    "yellow": {"id": "yellow_sphere", "shape": "sphere"},
+}
+
+_SCENE_ON_TABLE = {
+    "catalog": _CATALOG,
+    "objects": [
+        {"id": "red_cube",      "color": "red",   "shape": "cube"},
+        {"id": "green_cube",    "color": "green", "shape": "cube"},
+        {"id": "blue_cylinder", "color": "blue",  "shape": "cylinder"},
+    ],
+}
+
+_SCENE_WITH_DISTRACTOR = {
+    "catalog": _CATALOG,
+    "objects": [
+        {"id": "red_cube",    "color": "red",   "shape": "cube"},
+        {"id": "green_cube",  "color": "green", "shape": "cube"},
+        {"id": "distractor0", "color": "grey",  "shape": "cube"},  # not in catalog
+    ],
+}
+
+_SCENE_EMPTY = {"catalog": _CATALOG, "objects": []}
+
+
+def _rule_planner() -> TaskPlanner:
+    """Planner with a dummy LLM config — rule-based commands never hit the API."""
+    config = {"llm_model": "dummy", "temperature": 0.0}
+    with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
+        return TaskPlanner(config)
+
+
+@pytest.mark.parametrize("command,direction", [
+    ("rotate the red cube clockwise",         "clockwise"),
+    ("spin the green block counterclockwise", "counterclockwise"),
+    ("turn the red block to the right",       "clockwise"),
+    ("rotate the green cube to the left",     "counterclockwise"),
+])
+def test_rule_rotate(command, direction):
+    p = _rule_planner()
+    plan = p.plan(command, _SCENE_EMPTY)
+    assert len(plan) == 2
+    assert plan[0].skill == "grasp"
+    assert plan[1].skill == "rotate"
+    assert plan[1].args["direction"] == direction
+
+
+def test_rule_sort_returns_atomic_skill():
+    p = _rule_planner()
+    for cmd in ("sort all the objects", "line up all objects", "arrange them in a line"):
+        plan = p.plan(cmd, _SCENE_ON_TABLE)
+        assert len(plan) == 1
+        assert plan[0].skill == "sort"
+        assert plan[0].args == {}
+
+
+def test_rule_clear_returns_atomic_skill():
+    p = _rule_planner()
+    for cmd in ("clear the table", "clean up everything", "tidy up the workspace"):
+        plan = p.plan(cmd, _SCENE_ON_TABLE)
+        assert len(plan) == 1
+        assert plan[0].skill == "clear"
+        assert plan[0].args == {}
+
+
+def test_rule_push_basic():
+    p = _rule_planner()
+    plan = p.plan("push the red block to the left", _SCENE_ON_TABLE)
+    assert plan == [SkillCall("push", {"object_id": "red_cube", "direction": "left"})]
+
+
+def test_rule_grasp_uses_catalog_id():
+    """Planner should use 'blue_cylinder' from catalog, not 'blue_cube'."""
+    p = _rule_planner()
+    plan = p.plan("pick up the blue cylinder", _SCENE_ON_TABLE)
+    assert any(c.skill == "grasp" and c.args.get("object_id") == "blue_cylinder" for c in plan)

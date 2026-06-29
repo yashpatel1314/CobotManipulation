@@ -92,8 +92,25 @@ class CobotOrchestrator:
         return {"results": results, "success_rate": success_rate, "replan_rate": replan_rate}
 
     def run_replay(self, log_dir: Path) -> None:
-        """Replay a saved episode."""
+        """Replay a saved episode.
+
+        If episode.gif exists, prints its path for external viewing.
+        Always re-executes the saved plan in simulation for live review.
+        """
+        log_dir = Path(log_dir)
+        gif_path = log_dir / "episode.gif"
         plan_path = log_dir / "plan.json"
+        result_path = log_dir / "result.json"
+
+        if result_path.exists():
+            with open(result_path) as f:
+                meta = json.load(f)
+            outcome = "SUCCESS" if meta.get("success") else "FAILED"
+            print(f"Original outcome: {outcome}  replans={meta.get('replans', 0)}")
+
+        if gif_path.exists():
+            print(f"Recording: {gif_path.resolve()}")
+
         if not plan_path.exists():
             raise FileNotFoundError(f"No plan.json found in {log_dir}")
 
@@ -101,14 +118,18 @@ class CobotOrchestrator:
             plan_data = json.load(f)
 
         self._env.reset()
-        print(f"Replaying: {plan_data.get('command', '')}")
-        plan = [SkillCall(skill=s["skill"], args=s["args"]) for s in plan_data["skills"]]
+        render = self._config["env"].get("render", False)
+        if render:
+            self._env.render()
 
+        print(f"\nReplaying: {plan_data.get('command', '')}")
+        plan = [SkillCall(skill=s["skill"], args=s["args"]) for s in plan_data["skills"]]
         for call in plan:
             print(f"  → {call}")
             self._skills.execute(call, self._env, self._perception)
-            self._env.render()
-            time.sleep(0.5)
+            if render:
+                self._env.render()
+                time.sleep(0.3)
 
         self._env.close()
 
@@ -150,7 +171,7 @@ class CobotOrchestrator:
             return result
 
         self._save_plan(log_dir, command, plan)
-        frames: list[np.ndarray] = []
+        frames: list[np.ndarray] = [self._env.get_cached_image()]  # opening frame
         replan_count = 0
 
         for call in plan:
@@ -159,9 +180,9 @@ class CobotOrchestrator:
             success, reason = self._skills.execute(call, self._env, self._perception)
             result["skills"].append({"skill": call.skill, "args": call.args, "success": success})
 
+            frames.append(self._env.get_cached_image())  # frame after each skill
             if render:
                 self._env.render()
-                frames.append(self._env.get_scene_image())
 
             if not success:
                 if replan_count >= self._max_replan:
@@ -190,8 +211,7 @@ class CobotOrchestrator:
         outcome = "SUCCESS" if result["success"] else "FAILED"
         print(f"  [{outcome}]  replans={replan_count}")
 
-        if frames:
-            self._save_video(log_dir, frames)
+        self._save_video(log_dir, frames)
         self._save_result(log_dir, result)
         return result
 

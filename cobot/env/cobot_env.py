@@ -288,6 +288,10 @@ class CobotEnv:
             pass
         return self._obs["agentview_image"][::-1].copy()
 
+    def get_cached_image(self) -> np.ndarray:
+        """Return the current offscreen frame without stepping the simulation."""
+        return self._obs["agentview_image"][::-1].copy()
+
     def get_depth_image(self) -> np.ndarray:
         import robosuite.utils.camera_utils as cu
         depth_raw = self._obs["agentview_depth"][::-1, :, 0]

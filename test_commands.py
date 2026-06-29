@@ -29,6 +29,7 @@ from cobot.orchestrator import CobotOrchestrator
 # ── Commands to test ─────────────────────────────────────────────────────────
 # Each entry: (label, command_string)
 COMMANDS = [
+    # ── Existing primitives ───────────────────────────────────────────────────
     ("stack red on green",        "pick up the red block and place it on the green block"),
     ("stack green on red",        "put the green cube on top of the red cube"),
     ("place red at left",         "move the red block to the left side of the table"),
@@ -37,6 +38,11 @@ COMMANDS = [
     ("push red left",             "push the red block to the left"),
     ("push green forward",        "push the green block forward"),
     ("push red right",            "slide the red block to the right"),
+    # ── New skills / patterns ─────────────────────────────────────────────────
+    ("rotate red clockwise",      "rotate the red cube clockwise"),
+    ("rotate green ccw",          "spin the green block counterclockwise"),
+    ("sort all objects",          "line up all the objects on the table from left to right"),
+    ("clear table",               "clear the table"),
 ]
 
 

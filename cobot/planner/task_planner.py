@@ -35,10 +35,12 @@ Skills:
                                           adj_left, adj_right
 - push(object_id, direction)            → push; direction: left, right, forward, backward
 - rotate(object_id, direction)          → rotate held object; direction: clockwise, counterclockwise
+- sort()                                → atomically sort ALL on-table objects left-to-right alphabetically
+- clear()                               → atomically move ALL on-table objects to table edges
 
 Rules:
 1. Use ids from catalog exactly. Red/green are always on-table; do NOT spawn them.
-2. Sort/line-up: use place_at with spread positions (far_left → left → center → right → far_right).
+2. For sort/clear use the atomic skill — do NOT chain individual grasp+place_at.
 3. adj_left/adj_right are for pyramid bases (~4 cm apart, touching).
 4. Output ONLY valid JSON — a list with "skill" and "args" keys.
 
@@ -54,13 +56,8 @@ Example 3 — rotate red cube clockwise:
 [{"skill":"grasp","args":{"object_id":"red_cube"}},
  {"skill":"rotate","args":{"object_id":"red_cube","direction":"clockwise"}}]
 
-Example 4 — sort all 3 on-table objects (red, green, blue_cylinder) left to right:
-[{"skill":"grasp","args":{"object_id":"red_cube"}},
- {"skill":"place_at","args":{"object_id":"red_cube","position":"far_left"}},
- {"skill":"grasp","args":{"object_id":"green_cube"}},
- {"skill":"place_at","args":{"object_id":"green_cube","position":"center"}},
- {"skill":"grasp","args":{"object_id":"blue_cylinder"}},
- {"skill":"place_at","args":{"object_id":"blue_cylinder","position":"far_right"}}]
+Example 4 — sort all on-table objects left to right:
+[{"skill":"sort","args":{}}]
 
 Example 5 — pyramid with yellow and purple at bottom, green on top:
 [{"skill":"spawn","args":{"object_id":"yellow_sphere"}},
@@ -72,11 +69,8 @@ Example 5 — pyramid with yellow and purple at bottom, green on top:
  {"skill":"grasp","args":{"object_id":"green_cube"}},
  {"skill":"place_on","args":{"object_id":"green_cube","target_id":"yellow_sphere"}}]
 
-Example 6 — clear the table (park every object to the sides):
-[{"skill":"grasp","args":{"object_id":"red_cube"}},
- {"skill":"place_at","args":{"object_id":"red_cube","position":"far_right"}},
- {"skill":"grasp","args":{"object_id":"green_cube"}},
- {"skill":"place_at","args":{"object_id":"green_cube","position":"far_left"}}]
+Example 6 — clear/tidy the table:
+[{"skill":"clear","args":{}}]
 """
 
 _REPLAN_PROMPT = """\
@@ -309,21 +303,7 @@ class RuleBasedPlanner:
             cmd,
         )
         if sort_m:
-            catalog_colors = set(scene.get("catalog", {}).keys())
-            on_table = [o for o in scene.get("objects", [])
-                        if o.get("color") in catalog_colors and o.get("id")]
-            if on_table:
-                # Sort alphabetically by colour for deterministic ordering
-                on_table.sort(key=lambda o: o.get("color", ""))
-                spread = ["far_left", "left", "center", "right", "far_right"]
-                calls: list[SkillCall] = []
-                for i, obj in enumerate(on_table[:5]):
-                    oid = obj["id"]
-                    calls += [
-                        SkillCall("grasp",    {"object_id": oid}),
-                        SkillCall("place_at", {"object_id": oid, "position": spread[i]}),
-                    ]
-                return calls
+            return [SkillCall("sort", {})]
 
         # ── Clear table / clear area ─────────────────────────────────────────
         clear_m = re.search(
@@ -332,19 +312,7 @@ class RuleBasedPlanner:
             cmd,
         )
         if clear_m:
-            catalog_colors = set(scene.get("catalog", {}).keys())
-            on_table = [o for o in scene.get("objects", [])
-                        if o.get("color") in catalog_colors and o.get("id")]
-            if on_table:
-                parking = ["far_right", "far_left", "top_right", "top_left", "bottom_right"]
-                calls: list[SkillCall] = []
-                for i, obj in enumerate(on_table[:5]):
-                    oid = obj["id"]
-                    calls += [
-                        SkillCall("grasp",    {"object_id": oid}),
-                        SkillCall("place_at", {"object_id": oid, "position": parking[i % len(parking)]}),
-                    ]
-                return calls
+            return [SkillCall("clear", {})]
 
         # ── Rotate ──────────────────────────────────────────────────────────
         rotate_m = re.search(r"\b(rotate|spin|turn)\b", cmd)

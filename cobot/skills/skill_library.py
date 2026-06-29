@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from .clear import ClearSkill
 from .grasp import GraspSkill
 from .place_at import PlaceAtSkill
 from .place_on import PlaceOnSkill
 from .push import PushSkill
 from .rotate import RotateSkill
+from .sort import SortSkill
 from .spawn import SpawnSkill
 
 if TYPE_CHECKING:
@@ -21,6 +23,8 @@ _SKILL_CLASSES = {
     "place_at": PlaceAtSkill,
     "push":     PushSkill,
     "rotate":   RotateSkill,
+    "sort":     SortSkill,
+    "clear":    ClearSkill,
     "spawn":    SpawnSkill,
 }
 
