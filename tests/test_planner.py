@@ -302,3 +302,40 @@ def test_rule_handover_returns_atomic_skill():
     assert len(plan) == 1
     assert plan[0].skill == "handover"
     assert plan[0].args.get("object_id") == "red_cube"
+
+
+_SCENE_ON_TABLE_DISTRACTORS = {
+    "catalog": {
+        "red":   {"shape": "cube", "id": "red_cube"},
+        "green": {"shape": "cube", "id": "green_cube"},
+    },
+    "objects": [
+        {"id": "red_cube",   "color": "red",   "shape": "cube"},
+        {"id": "green_cube", "color": "green", "shape": "cube"},
+    ],
+    "distractors": [{"id": "distractor0"}, {"id": "distractor1"}],
+}
+
+
+def test_rule_rotate_then_place_on_grey():
+    """'rotate red then put it on the grey block' → grasp + rotate + place_on(distractor0)."""
+    p = _rule_planner()
+    plan = p.plan(
+        "take the red block and rotate it, then put it on the grey block",
+        _SCENE_ON_TABLE_DISTRACTORS,
+    )
+    skills = [c.skill for c in plan]
+    assert skills == ["grasp", "rotate", "place_on"]
+    assert plan[2].args["target_id"] == "distractor0"
+
+
+def test_rule_rotate_then_place_on_colour():
+    """'rotate red clockwise and place it on top of the green cube' → full 3-step plan."""
+    p = _rule_planner()
+    plan = p.plan(
+        "rotate the red cube clockwise and place it on top of the green cube",
+        _SCENE_ON_TABLE_DISTRACTORS,
+    )
+    skills = [c.skill for c in plan]
+    assert skills == ["grasp", "rotate", "place_on"]
+    assert plan[2].args["target_id"] == "green_cube"

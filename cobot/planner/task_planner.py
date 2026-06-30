@@ -91,7 +91,7 @@ Revise the plan to complete the original goal. Output only the remaining steps a
 # ---------------------------------------------------------------------------
 
 # Colour names we recognise
-_COLOURS = ("red", "green", "blue", "yellow", "orange", "purple")
+_COLOURS = ("red", "green", "blue", "yellow", "orange", "purple", "grey", "gray")
 
 # Default colour → object_id (catalog from scene overrides these at plan time)
 _COLOUR_TO_ID: dict[str, str] = {c: f"{c}_cube" for c in _COLOURS}
@@ -258,6 +258,12 @@ class RuleBasedPlanner:
         for colour, entry in scene.get("catalog", {}).items():
             if "id" in entry:
                 colour_to_id[colour] = entry["id"]
+        # Grey/gray → first distractor (obstacle cubes always on table)
+        distractors = scene.get("distractors", [])
+        if distractors:
+            grey_id = distractors[0].get("id", "distractor0")
+            colour_to_id["grey"] = grey_id
+            colour_to_id["gray"] = grey_id
 
         # ── Pyramid ─────────────────────────────────────────────────────────
         # "pyramid with X and Y at the bottom and Z at the top"
@@ -330,10 +336,25 @@ class RuleBasedPlanner:
                 direction = "clockwise"
             if colour:
                 obj_id = colour_to_id.get(colour, f"{colour}_cube")
-                return [
+                calls: list[SkillCall] = [
                     SkillCall("grasp",  {"object_id": obj_id}),
                     SkillCall("rotate", {"object_id": obj_id, "direction": direction}),
                 ]
+                # Check for a follow-on placement after the rotate
+                # e.g. "rotate red then put it on green" / "rotate X and stack on Y"
+                place_on_m = re.search(
+                    r"\b(put|place|stack|set)\b.{0,30}\b(on\s+(?:top\s+of\s+)?(?:the\s+)?)",
+                    cmd[rotate_m.end():],
+                )
+                if place_on_m:
+                    target_colour = _find_colour_after(
+                        cmd, rotate_m.end() + place_on_m.end()
+                    )
+                    if target_colour and target_colour != colour:
+                        target_id = colour_to_id.get(target_colour, f"{target_colour}_cube")
+                        calls.append(SkillCall("place_on", {"object_id": obj_id,
+                                                            "target_id": target_id}))
+                return calls
 
         # ── Handover (dual-arm) ─────────────────────────────────────────────
         handover_m = (
